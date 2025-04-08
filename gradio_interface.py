@@ -210,6 +210,59 @@ class EnhancedGradioInterface:
                                     lines=10, 
                                     interactive=False
                                 )
+                                
+                # Analysis tab
+                with gr.Tab("Analysis") as analysis_tab:
+                    gr.Markdown("""
+                    ### Compression Performance Analysis
+                    
+                    This section provides comprehensive visualizations and statistics about compression
+                    performance across different file types and compression methods.
+                    
+                    The analysis is based on your compression history, allowing you to understand
+                    which methods work best for different types of data.
+                    """)
+                    
+                    with gr.Row():
+                        analyze_btn = gr.Button("Generate Analysis", variant="primary")
+                        clear_history_btn = gr.Button("Clear History", variant="secondary")
+                    
+                    with gr.Row():
+                        summary_stats = gr.JSON(label="Summary Statistics")
+                    
+                    with gr.Tabs() as analysis_tabs:
+                        with gr.Tab("Compression Ratio"):
+                            gr.Markdown("""
+                            **Compression Ratio**: Shows how much each file was compressed relative to its original size.
+                            Lower values indicate better compression.
+                            """)
+                            ratio_plot = gr.Plot(label="Compression Ratio by File Type and Size")
+                            
+                        with gr.Tab("Method Usage"):
+                            gr.Markdown("""
+                            **Method Usage**: Shows which compression methods were most effective for different file types.
+                            """)
+                            method_plot = gr.Plot(label="Compression Method Usage")
+                            
+                        with gr.Tab("Size Comparison"):
+                            gr.Markdown("""
+                            **Size Comparison**: Direct comparison of original vs. compressed file sizes.
+                            """)
+                            size_plot = gr.Plot(label="Size Comparison by File Type")
+                            
+                        with gr.Tab("Throughput"):
+                            gr.Markdown("""
+                            **Throughput**: Shows compression speed in MB/s for different file types and sizes.
+                            Higher values indicate faster compression performance.
+                            """)
+                            throughput_plot = gr.Plot(label="Compression Throughput by File Type")
+                            
+                        with gr.Tab("File Type Summary"):
+                            gr.Markdown("""
+                            **File Type Summary**: Aggregates performance metrics by file extension.
+                            This view helps you understand which file types compress best.
+                            """)
+                            filetype_plot = gr.Plot(label="File Type Summary")
             
             # Launch the interface
             demo.launch()
