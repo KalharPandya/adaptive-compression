@@ -115,6 +115,63 @@ class EnhancedGradioInterface:
                             gr.Image(value="https://via.placeholder.com/600x400?text=Adaptive+Compression+Diagram", label="Adaptive Compression Process")
                         with gr.Column():
                             gr.Image(value="https://via.placeholder.com/600x400?text=File+Format+Structure", label="AMBC File Format")
+                
+                # Compress tab
+                with gr.Tab("Compress") as compress_tab:
+                    with gr.Row():
+                        with gr.Column():
+                            gr.Markdown("""
+                            ### Compress Files
+                            
+                            Upload a file and customize compression settings to create a compressed `.ambc` file.
+                            
+                            The algorithm will analyze your data patterns and apply the most efficient 
+                            compression techniques to different sections of your file.
+                            """)
+                            input_file = gr.File(label="Input File")
+                            
+                            with gr.Accordion("Advanced Settings", open=False):
+                                chunk_size = gr.Slider(
+                                    minimum=512, 
+                                    maximum=65536, 
+                                    value=4096, 
+                                    step=512, 
+                                    label="Chunk Size (bytes)",
+                                    info="Larger chunks may improve compression ratio but increase memory usage"
+                                )
+                                use_multithreading = gr.Checkbox(
+                                    label="Enable Multithreading", 
+                                    value=False,
+                                    info="Uses multiple CPU cores for faster compression"
+                                )
+                                
+                            compress_btn = gr.Button("Compress File", variant="primary")
+                        
+                        with gr.Column():
+                            output_file = gr.File(label="Compressed File")
+                            
+                            with gr.Accordion("Compression Results", open=True):
+                                result_summary = gr.Textbox(
+                                    label="Summary", 
+                                    lines=3, 
+                                    interactive=False
+                                )
+                                compression_stats = gr.JSON(
+                                    label="Detailed Statistics",
+                                    visible=False
+                                )
+                                stats_toggle = gr.Checkbox(
+                                    label="Show Detailed Statistics", 
+                                    value=False
+                                )
+                                compress_log = gr.Textbox(
+                                    label="Process Log", 
+                                    lines=10, 
+                                    interactive=False
+                                )
+                            
+                            with gr.Accordion("Method Usage Visualization", open=True):
+                                method_chart = gr.Plot(label="Compression Method Distribution")
             
             # Launch the interface
             demo.launch()
