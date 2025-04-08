@@ -1,6 +1,8 @@
 import os
 import sys
 import argparse
+import json
+import matplotlib.pyplot as plt
 
 from marker_finder import MarkerFinder
 from compression_methods import (
@@ -13,8 +15,20 @@ from compression_methods import (
 from adaptive_compressor import AdaptiveCompressor
 from compression_analyzer import CompressionAnalyzer
 
-# Import the enhanced modular Gradio interface
-from gradio import run_interface
+# Try to import the compatibility layer if available
+try:
+    from compression_fix import get_compatible_methods
+    COMPAT_AVAILABLE = True
+except ImportError:
+    COMPAT_AVAILABLE = False
+
+# Try to import both the original and enhanced Gradio interfaces
+from gradio_interface import GradioInterface
+try:
+    from gradio.main import run_interface as run_enhanced_interface
+    ENHANCED_UI_AVAILABLE = True
+except ImportError:
+    ENHANCED_UI_AVAILABLE = False
 
 def main():
     """
@@ -56,7 +70,13 @@ def main():
     )
     
     # GUI command
-    subparsers.add_parser("gui", help="Launch the graphical user interface")
+    gui_parser = subparsers.add_parser("gui", help="Launch the graphical user interface")
+    if ENHANCED_UI_AVAILABLE:
+        gui_parser.add_argument(
+            "--enhanced", 
+            action="store_true",
+            help="Use the enhanced modular UI (if available)"
+        )
     
     # Parse arguments
     args = parser.parse_args()
@@ -69,7 +89,10 @@ def main():
     elif args.command == "analyze":
         analyze_results(args.results_file, args.output_dir)
     elif args.command == "gui":
-        launch_gui()
+        if ENHANCED_UI_AVAILABLE and hasattr(args, 'enhanced') and args.enhanced:
+            launch_enhanced_gui()
+        else:
+            launch_original_gui()
     else:
         # If no command is provided, show help
         parser.print_help()
@@ -195,7 +218,6 @@ def analyze_results(results_file, output_dir):
         
         # Save summary to file
         with open(os.path.join(output_dir, "summary.json"), "w") as f:
-            import json
             json.dump(summary, f, indent=2)
         
         # Generate and save plots
@@ -210,7 +232,6 @@ def analyze_results(results_file, output_dir):
         for name, plot_func in plots:
             fig = plot_func()
             if fig:
-                import matplotlib.pyplot as plt
                 plt.figure(fig.number)
                 plt.savefig(os.path.join(output_dir, f"{name}.png"))
                 plt.close()
@@ -223,18 +244,34 @@ def analyze_results(results_file, output_dir):
         sys.exit(1)
 
 
-def launch_gui():
+def launch_original_gui():
     """
-    Launch the graphical user interface
+    Launch the original graphical user interface
     """
-    print("Launching GUI...")
+    print("Launching original GUI...")
     
     try:
-        # Run the enhanced modular Gradio interface
-        run_interface()
+        # Create and run the interface
+        interface = GradioInterface()
+        interface.run()
     
     except Exception as e:
         print(f"Error launching GUI: {e}")
+        sys.exit(1)
+
+
+def launch_enhanced_gui():
+    """
+    Launch the enhanced modular graphical user interface
+    """
+    print("Launching enhanced modular GUI...")
+    
+    try:
+        # Run the enhanced modular interface
+        run_enhanced_interface()
+    
+    except Exception as e:
+        print(f"Error launching enhanced GUI: {e}")
         sys.exit(1)
 
 
