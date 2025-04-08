@@ -172,6 +172,44 @@ class EnhancedGradioInterface:
                             
                             with gr.Accordion("Method Usage Visualization", open=True):
                                 method_chart = gr.Plot(label="Compression Method Distribution")
+                
+                # Decompress tab
+                with gr.Tab("Decompress") as decompress_tab:
+                    with gr.Row():
+                        with gr.Column():
+                            gr.Markdown("""
+                            ### Decompress Files
+                            
+                            Upload a compressed `.ambc` file to restore it to its original form.
+                            
+                            The decompression process will automatically detect the compression methods
+                            used for each segment and apply the appropriate decompression techniques.
+                            """)
+                            compressed_file = gr.File(label="Compressed .ambc File")
+                            decompress_btn = gr.Button("Decompress File", variant="primary")
+                        
+                        with gr.Column():
+                            decompressed_file = gr.File(label="Decompressed File")
+                            
+                            with gr.Accordion("Decompression Results", open=True):
+                                decomp_summary = gr.Textbox(
+                                    label="Summary", 
+                                    lines=3, 
+                                    interactive=False
+                                )
+                                decompression_stats = gr.JSON(
+                                    label="Detailed Statistics",
+                                    visible=False
+                                )
+                                decomp_stats_toggle = gr.Checkbox(
+                                    label="Show Detailed Statistics", 
+                                    value=False
+                                )
+                                decompress_log = gr.Textbox(
+                                    label="Process Log", 
+                                    lines=10, 
+                                    interactive=False
+                                )
             
             # Launch the interface
             demo.launch()
