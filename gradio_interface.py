@@ -6,9 +6,14 @@ import json
 import traceback
 import hashlib
 import numpy as np
-from PIL import Image
-import io
 
+# If you need to do any image or other transformations:
+# from PIL import Image
+# import io
+
+# Import the newly updated, dynamic chunk-based AdaptiveCompressor
+# This is the version that tries multiple chunk sizes and picks
+# whichever method+size yields the best ratio for that segment.
 from adaptive_compressor import AdaptiveCompressor
 from compression_analyzer import CompressionAnalyzer
 
@@ -20,11 +25,12 @@ except ImportError as e:
     print(f"Gradio not available: {e}")
     GRADIO_AVAILABLE = False
 
-# For enhanced UI access
+
 class EnhancedGradioInterface:
     """
-    Enhanced Gradio interface for the adaptive compression algorithm with better
-    explanations, visualizations, and user experience.
+    Enhanced Gradio interface for the dynamic-chunk adaptive compression algorithm.
+    This interface no longer requires a user-specified chunk size, as the
+    new AdaptiveCompressor does dynamic chunk-size selection automatically.
     """
     
     def __init__(self, title="Adaptive Marker-Based Compression"):
@@ -35,7 +41,11 @@ class EnhancedGradioInterface:
             title (str): Title for the interface
         """
         self.title = title
+        
+        # Our updated dynamic-chunk compressor
         self.compressor = AdaptiveCompressor()
+
+        # We also keep an analyzer for storing historical compression stats
         self.analyzer = CompressionAnalyzer()
         self.results_dir = "compression_results"
         
@@ -54,12 +64,6 @@ class EnhancedGradioInterface:
     def _ensure_serializable(self, data):
         """
         Ensure all data is serializable for Gradio JSON component
-        
-        Args:
-            data: The data to ensure is serializable
-            
-        Returns:
-            Serializable version of the data
         """
         if isinstance(data, dict):
             return {str(k): self._ensure_serializable(v) for k, v in data.items()}
@@ -72,6 +76,7 @@ class EnhancedGradioInterface:
         elif isinstance(data, (int, float, str, bool, type(None))):
             return data
         else:
+            # fallback: convert to string
             return str(data)
     
     def run(self):
@@ -84,214 +89,192 @@ class EnhancedGradioInterface:
             print("Please install it with: pip install gradio>=3.0.0")
             sys.exit(1)
             
-        # For the enhanced interface, we'll import the relevant modules from the gradio_components package
+        # We attempt to launch any advanced UI from a hypothetical "gradio_components" package.
+        # If that fails, we fallback to a simpler Blocks interface below.
         try:
-            # Add the current directory to the path to ensure imports work
             sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-            
-            # First attempt to check if the gradio_components package is importable at all
             try:
                 import gradio_components
-                # Try to run the interface through the components package
+                # If it has a run_interface function:
                 gradio_components.run_interface()
             except (ImportError, AttributeError) as e:
                 print(f"Warning: Enhanced UI not fully available: {e}")
-                print("Falling back to basic interface.")
+                print("Falling back to the basic interface.")
                 self._run_basic_interface()
         except Exception as e:
             print(f"Error importing enhanced interface: {e}")
-            print("Traceback:")
             traceback.print_exc()
             print("Falling back to basic interface...")
             self._run_basic_interface()
     
     def _run_basic_interface(self):
-        """Fallback to basic Gradio interface if enhanced UI fails"""
-        # Create a basic Gradio interface with minimal dependencies
+        """
+        A simplified Gradio interface that does not rely on advanced UI modules.
+        Note that we do not ask for chunk_size anymore: 
+        the new AdaptiveCompressor picks chunk sizes itself.
+        """
         with gr.Blocks(title=self.title) as demo:
             gr.Markdown(f"# {self.title}")
             gr.Markdown("""
-            This app demonstrates an adaptive compression algorithm that uses different 
-            compression techniques for different parts of a file based on which technique 
-            would be most efficient for that particular data pattern.
+            This demonstrates a **dynamic-chunk** adaptive compression algorithm that 
+            automatically tries different chunk sizes and multiple compression methods 
+            to find the best approach for each segment of your file. 
             
-            **Note**: The enhanced UI is not available. Using basic interface.
+            ### How It Works
+            - The file is divided at runtime: for each potential segment, 
+              the algorithm tests various chunk sizes (e.g., 1 KB, 2 KB, … up to 128 KB) 
+              and tries multiple compression methods on each chunk. 
+            - Whichever combination yields the best compression ratio for that chunk 
+              is chosen, then the chunk is finalized and appended to the compressed output. 
+            - This results in a `.ambc` file that can be decompressed seamlessly. 
+            
+            **Note**: This is a basic fallback UI for demonstration. 
+            If an advanced UI is available, it will be used instead.
             """)
-            
+
             with gr.Tab("Compress"):
                 with gr.Row():
                     with gr.Column():
-                        input_file = gr.File(label="Input File")
-                        chunk_size = gr.Slider(
-                            minimum=512, 
-                            maximum=65536, 
-                            value=4096, 
-                            step=512, 
-                            label="Chunk Size (bytes)"
-                        )
+                        input_file = gr.File(label="Input File to Compress")
                         compress_btn = gr.Button("Compress File", variant="primary")
-                    
                     with gr.Column():
-                        output_file = gr.File(label="Compressed File")
+                        output_file = gr.File(label="Resulting .ambc File")
                         compression_stats = gr.JSON(label="Compression Statistics")
-                        compress_log = gr.Textbox(label="Compression Log", lines=10)
+                        compress_log = gr.Textbox(label="Log Output", lines=10)
             
             with gr.Tab("Decompress"):
                 with gr.Row():
                     with gr.Column():
-                        compressed_file = gr.File(label="Compressed File")
+                        compressed_file = gr.File(label="Compressed .ambc File")
                         decompress_btn = gr.Button("Decompress File", variant="primary")
-                    
                     with gr.Column():
                         decompressed_file = gr.File(label="Decompressed File")
                         decompression_stats = gr.JSON(label="Decompression Statistics")
-                        decompress_log = gr.Textbox(label="Decompression Log", lines=10)
-                        
-            # Define a basic compress function
-            def compress_file_basic(file, chunk_size):
+                        decompress_log = gr.Textbox(label="Log Output", lines=10)
+            
+            def compress_file_basic(file):
+                """
+                Basic compression function with dynamic chunk approach (no user chunk_size).
+                """
                 if file is None:
                     return None, {"error": "No file provided"}, "Error: No file provided"
                 
+                log_output = []
                 try:
                     file_path = file.name
                     filename = os.path.basename(file_path)
                     output_path = os.path.join(tempfile.gettempdir(), f"{filename}.ambc")
                     
-                    log_output = []
-                    log_output.append(f"Starting compression of {filename}...")
-                    log_output.append(f"Chunk size: {chunk_size} bytes")
+                    log_output.append(f"Starting compression of {filename} using dynamic chunk approach...")
                     
-                    # Create custom log capture for output
+                    # Capture logs
                     class LogCapture:
                         def __init__(self, log_list):
                             self.log_list = log_list
-                            self.original_stdout = sys.stdout
+                            self.orig_stdout = sys.stdout
                         def write(self, message):
                             if message.strip():
                                 self.log_list.append(message.strip())
-                                self.original_stdout.write(message)
+                                self.orig_stdout.write(message)
                         def flush(self):
-                            self.original_stdout.flush()
+                            self.orig_stdout.flush()
                     
-                    # Redirect stdout to capture logs
                     original_stdout = sys.stdout
-                    log_capture = LogCapture(log_output)
-                    sys.stdout = log_capture
-                    
+                    logger = LogCapture(log_output)
+                    sys.stdout = logger
                     try:
-                        # Compress the file
                         stats = self.compressor.compress(file_path, output_path)
                     finally:
-                        # Restore stdout
                         sys.stdout = original_stdout
                     
-                    # Update analyzer
+                    # Save results
                     self.analyzer.add_result(filename, stats)
                     self.analyzer.save_results(self.results_file)
-                    
-                    # Make stats JSON-compatible
                     stats = self._ensure_serializable(stats)
                     
                     return output_path, stats, "\n".join(log_output)
                 except Exception as e:
-                    error_msg = f"Error during compression: {str(e)}"
-                    print(error_msg)
+                    error_msg = f"Error during compression: {e}"
                     traceback.print_exc()
-                    return None, {"error": str(e)}, error_msg
+                    return None, {"error": str(e)}, "\n".join(log_output + [error_msg])
             
-            # Define a basic decompress function
             def decompress_file_basic(file):
+                """
+                Basic decompression for a .ambc file
+                """
                 if file is None:
                     return None, {"error": "No file provided"}, "Error: No file provided"
                 
+                log_output = []
                 try:
                     file_path = file.name
                     filename = os.path.basename(file_path)
                     base_name = os.path.splitext(filename)[0]
                     output_path = os.path.join(tempfile.gettempdir(), f"{base_name}_decompressed")
                     
-                    log_output = []
                     log_output.append(f"Starting decompression of {filename}...")
                     
-                    # Create custom log capture
                     class LogCapture:
                         def __init__(self, log_list):
                             self.log_list = log_list
-                            self.original_stdout = sys.stdout
+                            self.orig_stdout = sys.stdout
                         def write(self, message):
                             if message.strip():
                                 self.log_list.append(message.strip())
-                                self.original_stdout.write(message)
+                                self.orig_stdout.write(message)
                         def flush(self):
-                            self.original_stdout.flush()
+                            self.orig_stdout.flush()
                     
-                    # Redirect stdout to capture logs
-                    original_stdout = sys.stdout
-                    log_capture = LogCapture(log_output)
-                    sys.stdout = log_capture
-                    
+                    orig_stdout = sys.stdout
+                    logger = LogCapture(log_output)
+                    sys.stdout = logger
                     try:
-                        # Decompress the file
                         stats = self.compressor.decompress(file_path, output_path)
                     finally:
-                        # Reset stdout
-                        sys.stdout = original_stdout
+                        sys.stdout = orig_stdout
                     
-                    # Make stats JSON-compatible
                     stats = self._ensure_serializable(stats)
                     
                     return output_path, stats, "\n".join(log_output)
                 except Exception as e:
-                    error_msg = f"Error during decompression: {str(e)}"
-                    print(error_msg)
+                    error_msg = f"Error during decompression: {e}"
                     traceback.print_exc()
-                    return None, {"error": str(e)}, error_msg
+                    return None, {"error": str(e)}, "\n".join(log_output + [error_msg])
             
-            # Connect the UI elements to functions
+            # Link UI
             compress_btn.click(
-                compress_file_basic, 
-                inputs=[input_file, chunk_size], 
+                compress_file_basic,
+                inputs=[input_file],
                 outputs=[output_file, compression_stats, compress_log]
             )
-            
             decompress_btn.click(
-                decompress_file_basic, 
-                inputs=[compressed_file], 
+                decompress_file_basic,
+                inputs=[compressed_file],
                 outputs=[decompressed_file, decompression_stats, decompress_log]
             )
         
-        # Launch the basic interface
         demo.launch()
-    
+
     def format_file_size(self, size_bytes):
         """
-        Format file size in bytes to a human-readable format
-        
-        Args:
-            size_bytes (int): Size in bytes
-            
-        Returns:
-            str: Formatted size (e.g. "4.2 MB")
+        Format file size in a user-friendly manner
         """
-        if size_bytes == 0:
+        if size_bytes==0:
             return "0 B"
-            
-        size_names = ["B", "KB", "MB", "GB", "TB"]
-        i = 0
-        while size_bytes >= 1024 and i < len(size_names) - 1:
-            size_bytes /= 1024.0
-            i += 1
-            
-        return f"{size_bytes:.1f} {size_names[i]}"
+        units= ["B","KB","MB","GB","TB"]
+        i=0
+        while size_bytes>=1024 and i< len(units)-1:
+            size_bytes/=1024.0
+            i+=1
+        return f"{size_bytes:.1f} {units[i]}"
 
 
-# Legacy interface for backwards compatibility
+# Legacy fallback
 class GradioInterface(EnhancedGradioInterface):
     """Legacy interface class for backward compatibility"""
     pass
 
 
-# Direct execution
-if __name__ == "__main__":
+if __name__=="__main__":
     interface = EnhancedGradioInterface()
     interface.run()

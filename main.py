@@ -6,6 +6,7 @@ import json
 import subprocess
 import pkg_resources
 import matplotlib.pyplot as plt
+import traceback
 
 from marker_finder import MarkerFinder
 from compression_methods import (
@@ -45,11 +46,11 @@ except ImportError as e:
     print(f"Warning: Gradio is not installed: {e}")
     print("GUI features will not be available without installing Gradio.")
 
-# Handle the enhanced interface with graceful fallback
+# Graceful import handler for enhanced interface modules
 class GracefulImportHandler:
     def __init__(self):
         self.import_errors = []
-        
+
     def try_import(self, module_name):
         try:
             module = __import__(module_name, fromlist=['*'])
@@ -60,37 +61,32 @@ class GracefulImportHandler:
             print(error_msg)
             return None
 
-# Import the Enhanced Gradio Interface
 gui_handler = GracefulImportHandler()
 
-# First try the compatibility layer for older Gradio versions
-if not gui_handler.try_import('gradio_components.blocks_compat'):
-    print("Gradio blocks compatibility layer not available. UI may have limited functionality.")
-
-# Then try the enhanced interface
+# Try to import EnhancedGradioInterface from modern locations:
 EnhancedGradioInterface = None
 try:
-    # First try direct import
+    # Try the legacy location first (if present)
     from gradio_interface import EnhancedGradioInterface
 except ImportError as e:
-    print(f"Failed to import EnhancedGradioInterface: {e}")
-    # Try to import from gradio_components
+    print(f"Failed to import EnhancedGradioInterface from gradio_interface: {e}")
     try:
+        # Now try the newer location in gradio_components
         from gradio_components.interface import EnhancedGradioInterface
     except ImportError as e:
-        print(f"Failed to import from gradio_components.interface: {e}")
+        print(f"Failed to import EnhancedGradioInterface from gradio_components.interface: {e}")
         EnhancedGradioInterface = None
 
-# Legacy GradioInterface for backward compatibility
+# For backward compatibility, fall back to basic interface if needed.
 GradioInterface = None
 try:
     from gradio_interface import GradioInterface
 except ImportError:
-    # If the enhanced interface is available, use it as a fallback
     if EnhancedGradioInterface:
         GradioInterface = EnhancedGradioInterface
     else:
         print("No Gradio interface available. GUI will not work.")
+
 
 def main():
     """
@@ -100,25 +96,18 @@ def main():
     parser = argparse.ArgumentParser(
         description="Adaptive Marker-Based Compression Algorithm"
     )
-    
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
-    # Compress command
+    # Compress command – no chunk-size argument now, since dynamic selection is built in.
     compress_parser = subparsers.add_parser("compress", help="Compress a file")
     compress_parser.add_argument("input", help="Input file to compress")
     compress_parser.add_argument("output", help="Output file path")
-    compress_parser.add_argument(
-        "--chunk-size", 
-        type=int, 
-        default=4096, 
-        help="Chunk size for compression (default: 4096)"
-    )
-    
+
     # Decompress command
     decompress_parser = subparsers.add_parser("decompress", help="Decompress a file")
     decompress_parser.add_argument("input", help="Input file to decompress")
     decompress_parser.add_argument("output", help="Output file path")
-    
+
     # Analyze command
     analyze_parser = subparsers.add_parser("analyze", help="Analyze compression results")
     analyze_parser.add_argument(
@@ -131,21 +120,19 @@ def main():
         default="analysis_output", 
         help="Directory to save analysis plots"
     )
-    
-    # GUI command (optional, since GUI is now the default)
+
+    # GUI command (optional)
     gui_parser = subparsers.add_parser("gui", help="Launch the graphical user interface")
     gui_parser.add_argument(
         "--install-gradio",
         action="store_true",
         help="Try to install or upgrade Gradio if missing"
     )
-    
-    # Parse arguments
+
     args = parser.parse_args()
-    
-    # If no command is provided, or if 'gui' is the command, launch the enhanced GUI.
+
+    # If no command or the command is 'gui', launch the enhanced GUI.
     if args.command is None or args.command == "gui":
-        # If Gradio is not available or upgrade is requested, try to install Gradio
         if args.command == "gui" and hasattr(args, "install_gradio") and args.install_gradio:
             print("Trying to install/upgrade Gradio...")
             try:
@@ -155,7 +142,6 @@ def main():
             except subprocess.CalledProcessError as e:
                 print(f"Failed to install Gradio: {e}")
                 sys.exit(1)
-                
         print("Launching enhanced GUI...")
         try:
             interface = EnhancedGradioInterface()
@@ -165,10 +151,10 @@ def main():
             print("See SETUP.md for troubleshooting steps.")
             sys.exit(1)
         sys.exit(0)
-    
-    # Execute compress, decompress, or analyze commands
+
+    # Otherwise run command-line operations
     if args.command == "compress":
-        compress_file(args.input, args.output, args.chunk_size)
+        compress_file(args.input, args.output)
     elif args.command == "decompress":
         decompress_file(args.input, args.output)
     elif args.command == "analyze":
@@ -177,10 +163,10 @@ def main():
         parser.print_help()
 
 
-def compress_file(input_path, output_path, chunk_size):
-    print(f"Compressing {input_path} to {output_path} with chunk size {chunk_size}...")
+def compress_file(input_path, output_path):
+    print(f"Compressing {input_path} to {output_path}...")
     try:
-        compressor = AdaptiveCompressor(chunk_size=chunk_size)
+        compressor = AdaptiveCompressor()
         stats = compressor.compress(input_path, output_path)
         print("\nCompression Statistics:")
         print(f"  Original size: {stats['original_size']} bytes")
@@ -191,10 +177,9 @@ def compress_file(input_path, output_path, chunk_size):
         print(f"  Throughput: {stats['throughput_mb_per_sec']:.2f} MB/s")
         print("\nChunk Statistics:")
         print(f"  Total chunks: {stats['chunk_stats']['total_chunks']}")
-        print("  Method usage:")
-        for method_id, count in stats['chunk_stats']['method_usage'].items():
+        for mid, count in stats['chunk_stats']['method_usage'].items():
             if count > 0:
-                print(f"    {get_method_name(method_id)}: {count} chunks")
+                print(f"    {get_method_name(mid)}: {count} chunks")
         
         results_dir = "compression_results"
         os.makedirs(results_dir, exist_ok=True)

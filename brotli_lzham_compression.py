@@ -10,7 +10,7 @@ except ImportError:
     print("brotli library not available. Brotli compression will be disabled.")
 
 try:
-    import pylzham
+    import lzham
     HAS_LZHAM = True
 except ImportError:
     HAS_LZHAM = False
@@ -162,7 +162,7 @@ if HAS_LZHAM:
             
             try:
                 # Use max compression level
-                compressed = pylzham.compress(data, dict_size_log2=23, comp_level=4)
+                compressed = lzham.compress(data, dict_size_log2=23, comp_level=4)
                 print(f"LZHAM compression: {len(data)} bytes -> {len(compressed)} bytes")
                 return compressed
             except Exception as e:
@@ -186,7 +186,7 @@ if HAS_LZHAM:
             
             try:
                 # Use LZHAM to decompress
-                decompressed = pylzham.decompress(data, decompressed_size=original_length)
+                decompressed = lzham.decompress(data, decompressed_size=original_length)
                 print(f"LZHAM decompression: {len(data)} bytes -> {len(decompressed)} bytes")
                 
                 # Ensure we have the right size

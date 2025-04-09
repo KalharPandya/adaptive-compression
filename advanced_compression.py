@@ -2,11 +2,12 @@ import zlib
 import bz2
 import lzma
 import numpy as np
-from compression_methods import CompressionMethod
 import sys
 import os
 
-# Try to import additional compression libraries
+from compression_methods import CompressionMethod
+
+# Try to import zstandard (Zstd)
 try:
     import zstandard as zstd
     HAS_ZSTD = True
@@ -14,6 +15,7 @@ except ImportError:
     HAS_ZSTD = False
     print("zstd library not available. Zstandard compression will be disabled.")
 
+# Try to import lz4.frame (LZ4)
 try:
     import lz4.frame
     HAS_LZ4 = True
@@ -21,595 +23,292 @@ except ImportError:
     HAS_LZ4 = False
     print("lz4 library not available. LZ4 compression will be disabled.")
 
-# Try to import Brotli and LZHAM
+# Try to import Brotli and LZHAM from an external file (brotli_lzham_compression.py)
 try:
-    # Check if brotli_lzham_compression.py exists in the current directory
     if os.path.exists("brotli_lzham_compression.py"):
         from brotli_lzham_compression import BrotliCompression, HAS_BROTLI
+        from brotli_lzham_compression import LZHAMCompression, HAS_LZHAM
         if HAS_BROTLI:
             print("Added Brotli compression")
-            
-        try:
-            from brotli_lzham_compression import LZHAMCompression, HAS_LZHAM
-            if HAS_LZHAM:
-                print("Added LZHAM compression")
-        except ImportError:
-            HAS_LZHAM = False
+        if HAS_LZHAM:
+            print("Added LZHAM compression")
     else:
-        print("brotli_lzham_compression.py not found in current directory")
         HAS_BROTLI = False
         HAS_LZHAM = False
+        print("brotli_lzham_compression.py not found in current directory")
 except ImportError as e:
     print(f"Error importing from brotli_lzham_compression: {e}")
     HAS_BROTLI = False
     HAS_LZHAM = False
 
+# ---------------------------------------------------------------------
+# Utility functions for choosing whether to compress
+# ---------------------------------------------------------------------
+
+def calculate_entropy(data: bytes) -> float:
+    """
+    Compute approximate Shannon entropy for 'data'.
+    """
+    if not data:
+        return 0.0
+    counts = np.bincount(bytearray(data), minlength=256)
+    probs = counts / len(data)
+    probs = probs[probs > 0]
+    return -np.sum(probs * np.log2(probs))
+
+def calculate_text_ratio(data: bytes) -> float:
+    """
+    Estimate fraction of bytes that are typical text characters.
+    """
+    if not data:
+        return 0.0
+    text_chars = sum(1 for b in data if 32 <= b <= 127 or b in (9, 10, 13))
+    return text_chars / len(data)
+
+# ---------------------------------------------------------------------
+# DEFLATE
+# ---------------------------------------------------------------------
 class DeflateCompression(CompressionMethod):
-    """
-    DEFLATE compression method (used in ZIP files)
-    """
     @property
     def type_id(self):
         return 5
     
-    def compress(self, data):
-        """
-        Compress using DEFLATE (zlib)
-        
-        Args:
-            data (bytes): Data to compress
-            
-        Returns:
-            bytes: Compressed data
-        """
+    def compress(self, data, level=9):
         if not data:
             return b''
-        
-        # Use zlib with compression level 9 (max compression)
-        compressed = zlib.compress(data, level=9)
-        print(f"DEFLATE compression: {len(data)} bytes -> {len(compressed)} bytes")
+        compressed = zlib.compress(data, level=level)
+        print(f"DEFLATE compression (lvl={level}): {len(data)} -> {len(compressed)} bytes")
         return compressed
     
     def decompress(self, data, original_length):
-        """
-        Decompress DEFLATE-compressed data
-        
-        Args:
-            data (bytes): Compressed data
-            original_length (int): Original length of the uncompressed data
-            
-        Returns:
-            bytes: Decompressed data
-        """
         if not data:
             return b''
-        
         try:
-            # Use zlib to decompress
             decompressed = zlib.decompress(data)
-            print(f"DEFLATE decompression: {len(data)} bytes -> {len(decompressed)} bytes")
-            
-            # Ensure we have the correct length
-            if len(decompressed) != original_length:
-                if len(decompressed) > original_length:
-                    print(f"Warning: DEFLATE decompressed size ({len(decompressed)}) larger than original ({original_length})")
-                    decompressed = decompressed[:original_length]
-                else:
-                    print(f"Warning: DEFLATE decompressed size ({len(decompressed)}) smaller than original ({original_length})")
-                    # Pad with zeros if needed
-                    missing = original_length - len(decompressed)
-                    decompressed = decompressed + bytes(missing)
-            
+            if len(decompressed) > original_length:
+                decompressed = decompressed[:original_length]
+            elif len(decompressed) < original_length:
+                decompressed += bytes(original_length - len(decompressed))
+            print(f"DEFLATE decompression: {len(data)} -> {len(decompressed)} bytes")
             return decompressed
-        
-        except zlib.error as e:
-            print(f"DEFLATE decompression error: {e}")
-            # Return zeros as a fallback
+        except Exception as e:
+            print(f"DEFLATE decompress error: {e}")
             return bytes(original_length)
     
-    def should_use(self, data, threshold=0.9):
+    def should_use(self, data: bytes, threshold=0.9) -> bool:
         """
-        Determine if DEFLATE compression should be used
-        
-        Args:
-            data (bytes): Data to analyze
-            threshold (float): Threshold for making decision
-            
-        Returns:
-            bool: True if DEFLATE should be used
+        We'll accept data if it's at least 64 bytes 
+        and the entropy is not extremely high (≥8.0).
         """
-        # DEFLATE works well on most data types
-        # For small data chunks, it may not be worth the overhead
-        if len(data) < 50:
+        if len(data) < 64:
             return False
-            
-        # Quick check using entropy - if entropy is high, compression may not help
-        entropy = self._calculate_entropy(data)
-        
-        # If entropy is very high (>7.8), data is likely already compressed or encrypted
-        if entropy > 7.8:
+        if calculate_entropy(data) >= 8.0:
             return False
-            
         return True
-    
-    def _calculate_entropy(self, data):
-        """Calculate Shannon entropy of the data"""
-        if not data:
-            return 0.0
-            
-        # Count byte frequencies
-        counts = np.bincount(bytearray(data), minlength=256)
-        
-        # Calculate probabilities for each byte value
-        probabilities = counts / len(data)
-        
-        # Filter out zero probabilities to avoid log(0)
-        probabilities = probabilities[probabilities > 0]
-        
-        # Calculate entropy: -sum(p * log2(p))
-        entropy = -np.sum(probabilities * np.log2(probabilities))
-        
-        return entropy
 
-
+# ---------------------------------------------------------------------
+# BZIP2
+# ---------------------------------------------------------------------
 class Bzip2Compression(CompressionMethod):
-    """
-    BZIP2 compression method (better compression than DEFLATE, but slower)
-    """
     @property
     def type_id(self):
         return 6
     
-    def compress(self, data):
-        """
-        Compress using BZIP2
-        
-        Args:
-            data (bytes): Data to compress
-            
-        Returns:
-            bytes: Compressed data
-        """
+    def compress(self, data, level=9):
         if not data:
             return b''
-        
-        # Use bz2 with compression level 9 (highest)
-        compressed = bz2.compress(data, compresslevel=9)
-        print(f"BZIP2 compression: {len(data)} bytes -> {len(compressed)} bytes")
+        compressed = bz2.compress(data, compresslevel=level)
+        print(f"BZIP2 compression (lvl={level}): {len(data)} -> {len(compressed)} bytes")
         return compressed
     
     def decompress(self, data, original_length):
-        """
-        Decompress BZIP2-compressed data
-        
-        Args:
-            data (bytes): Compressed data
-            original_length (int): Original length of the uncompressed data
-            
-        Returns:
-            bytes: Decompressed data
-        """
         if not data:
             return b''
-        
         try:
-            # Use bz2 to decompress
             decompressed = bz2.decompress(data)
-            print(f"BZIP2 decompression: {len(data)} bytes -> {len(decompressed)} bytes")
-            
-            # Ensure we don't exceed the original length
             if len(decompressed) > original_length:
-                print(f"Warning: BZIP2 decompressed size ({len(decompressed)}) larger than original ({original_length})")
                 decompressed = decompressed[:original_length]
             elif len(decompressed) < original_length:
-                print(f"Warning: BZIP2 decompressed size ({len(decompressed)}) smaller than original ({original_length})")
-                # Pad with zeros if needed
-                missing = original_length - len(decompressed)
-                print(f"Padding with {missing} zero bytes")
-                decompressed = decompressed + bytes(missing)
-            
+                decompressed += bytes(original_length - len(decompressed))
+            print(f"BZIP2 decompression: {len(data)} -> {len(decompressed)} bytes")
             return decompressed
-        
         except Exception as e:
-            print(f"BZIP2 decompression error: {e}")
-            # Return zeros as a fallback
+            print(f"BZIP2 decompress error: {e}")
             return bytes(original_length)
     
-    def should_use(self, data, threshold=0.9):
+    def should_use(self, data: bytes, threshold=0.9) -> bool:
         """
-        Determine if BZIP2 compression should be used
-        
-        Args:
-            data (bytes): Data to analyze
-            threshold (float): Threshold for making decision
-            
-        Returns:
-            bool: True if BZIP2 should be used
+        BZIP2 has more overhead, so better for bigger chunks (≥ 1 KB).
+        We'll skip if extremely high entropy (≥7.7).
         """
-        # BZIP2 works best on larger chunks (because of its block size)
-        if len(data) < 100:
-            return False
-            
-        # Quick check using entropy - if entropy is high, compression may not help
-        entropy = self._calculate_entropy(data)
-        
-        # If entropy is very high (>7.5), data is likely already compressed or encrypted
-        if entropy > 7.5:
+        if len(data) < 1024:
             return False
         
-        # BZIP2 is most effective for text data
-        text_chars = sum(1 for b in data if 32 <= b <= 127 or b in (9, 10, 13))
-        text_ratio = text_chars / len(data) if data else 0
-        
-        # If the data is primarily text, bzip2 is a good choice
-        if text_ratio > 0.7:
-            return True
-        
-        # For other data, only use if the entropy suggests it's compressible
-        return entropy < 6.0
-    
-    def _calculate_entropy(self, data):
-        """Calculate Shannon entropy of the data"""
-        if not data:
-            return 0.0
-            
-        # Count byte frequencies
-        counts = np.bincount(bytearray(data), minlength=256)
-        
-        # Calculate probabilities for each byte value
-        probabilities = counts / len(data)
-        
-        # Filter out zero probabilities to avoid log(0)
-        probabilities = probabilities[probabilities > 0]
-        
-        # Calculate entropy: -sum(p * log2(p))
-        entropy = -np.sum(probabilities * np.log2(probabilities))
-        
-        return entropy
+        ent = calculate_entropy(data)
+        if ent >= 7.7:
+            return False
+        return True
 
-
+# ---------------------------------------------------------------------
+# LZMA
+# ---------------------------------------------------------------------
 class LZMACompression(CompressionMethod):
     """
-    LZMA compression method (used in 7z files, very high compression ratio)
+    LZMA with a custom filter chain. We do NOT specify preset simultaneously.
     """
     @property
     def type_id(self):
         return 7
     
     def compress(self, data):
-        """
-        Compress using LZMA
-        
-        Args:
-            data (bytes): Data to compress
-            
-        Returns:
-            bytes: Compressed data
-        """
         if not data:
             return b''
-        
         try:
-            # Use lzma with default settings (simpler and more reliable)
-            compressed = lzma.compress(data)
-            print(f"LZMA compression: {len(data)} bytes -> {len(compressed)} bytes")
+            # Custom filter without specifying preset
+            filters = [
+                {
+                    "id": lzma.FILTER_LZMA2,
+                    "dict_size": 1 << 24,  # 16 MB dictionary
+                }
+            ]
+            compressor = lzma.LZMACompressor(
+                format=lzma.FORMAT_XZ,
+                check=lzma.CHECK_CRC64,
+                filters=filters
+            )
+            compressed = compressor.compress(data)
+            compressed += compressor.flush()
+            print(f"LZMA compression (dict=16MB): {len(data)} -> {len(compressed)} bytes")
             return compressed
         except Exception as e:
-            print(f"LZMA compression error: {e}")
-            # Fall back to no compression
+            print(f"LZMA compress error: {e}")
             return data
     
     def decompress(self, data, original_length):
-        """
-        Decompress LZMA-compressed data
-        
-        Args:
-            data (bytes): Compressed data
-            original_length (int): Original length of the uncompressed data
-            
-        Returns:
-            bytes: Decompressed data
-        """
         if not data:
             return b''
-        
         try:
-            # Use lzma to decompress with standard format
             decompressed = lzma.decompress(data)
-            print(f"LZMA decompression: {len(data)} bytes -> {len(decompressed)} bytes")
-            
-            # Ensure we don't exceed the original length
             if len(decompressed) > original_length:
-                print(f"Warning: LZMA decompressed size ({len(decompressed)}) larger than original ({original_length})")
                 decompressed = decompressed[:original_length]
             elif len(decompressed) < original_length:
-                print(f"Warning: LZMA decompressed size ({len(decompressed)}) smaller than original ({original_length})")
-                # Pad with zeros if needed
-                missing = original_length - len(decompressed)
-                print(f"Padding with {missing} zero bytes")
-                decompressed = decompressed + bytes(missing)
-            
+                decompressed += bytes(original_length - len(decompressed))
+            print(f"LZMA decompression: {len(data)} -> {len(decompressed)} bytes")
             return decompressed
-        
         except Exception as e:
-            print(f"LZMA decompression error: {e}")
-            # Return zeros as a fallback
+            print(f"LZMA decompress error: {e}")
             return bytes(original_length)
     
-    def should_use(self, data, threshold=0.9):
+    def should_use(self, data: bytes, threshold=0.9) -> bool:
         """
-        Determine if LZMA compression should be used
-        
-        Args:
-            data (bytes): Data to analyze
-            threshold (float): Threshold for making decision
-            
-        Returns:
-            bool: True if LZMA should be used
+        LZMA is best for bigger chunks (≥ 8 KB) 
+        and moderate/low entropy (<8).
         """
-        # LZMA has high overhead, so not suitable for small chunks
-        if len(data) < 1000:
+        if len(data) < 8192:
             return False
         
-        # Quick check using entropy - if entropy is high, compression may not help
-        entropy = self._calculate_entropy(data)
-        
-        # If entropy is very high (>7.5), data is likely already compressed or encrypted
-        if entropy > 7.5:
+        ent = calculate_entropy(data)
+        if ent >= 8.0:
             return False
-        
-        # LZMA works best on highly redundant data
-        # For very compressible data (low entropy), it's worth the overhead
-        return entropy < 5.5
-    
-    def _calculate_entropy(self, data):
-        """Calculate Shannon entropy of the data"""
-        if not data:
-            return 0.0
-            
-        # Count byte frequencies
-        counts = np.bincount(bytearray(data), minlength=256)
-        
-        # Calculate probabilities for each byte value
-        probabilities = counts / len(data)
-        
-        # Filter out zero probabilities to avoid log(0)
-        probabilities = probabilities[probabilities > 0]
-        
-        # Calculate entropy: -sum(p * log2(p))
-        entropy = -np.sum(probabilities * np.log2(probabilities))
-        
-        return entropy
+        return True
 
-
-# Add ZStandard compression if available
+# ---------------------------------------------------------------------
+# Zstandard
+# ---------------------------------------------------------------------
 if HAS_ZSTD:
     class ZstdCompression(CompressionMethod):
-        """
-        ZStandard compression method (fast with good compression ratio)
-        """
         @property
         def type_id(self):
             return 8
         
         def compress(self, data):
-            """
-            Compress using ZStandard
-            
-            Args:
-                data (bytes): Data to compress
-                
-            Returns:
-                bytes: Compressed data
-            """
             if not data:
                 return b''
-            
             try:
-                # Use ZStandard with high compression level
-                compressor = zstd.ZstdCompressor(level=19)  # Maximum compression level
+                compressor = zstd.ZstdCompressor(level=19)  # near max
                 compressed = compressor.compress(data)
-                print(f"ZStd compression: {len(data)} bytes -> {len(compressed)} bytes")
+                print(f"ZStd compression (lvl=19): {len(data)} -> {len(compressed)} bytes")
                 return compressed
             except Exception as e:
-                print(f"ZStd compression error: {e}")
-                # Fall back to no compression
+                print(f"Zstd compress error: {e}")
                 return data
         
         def decompress(self, data, original_length):
-            """
-            Decompress ZStandard-compressed data
-            
-            Args:
-                data (bytes): Compressed data
-                original_length (int): Original length of the uncompressed data
-                
-            Returns:
-                bytes: Decompressed data
-            """
             if not data:
                 return b''
-            
             try:
-                # Use ZStandard to decompress
                 decompressor = zstd.ZstdDecompressor()
                 decompressed = decompressor.decompress(data, max_output_size=original_length)
-                print(f"ZStd decompression: {len(data)} bytes -> {len(decompressed)} bytes")
-                
-                # Ensure we have the right size
-                if len(decompressed) != original_length:
-                    if len(decompressed) > original_length:
-                        print(f"Warning: ZStd decompressed size ({len(decompressed)}) larger than original ({original_length})")
-                        decompressed = decompressed[:original_length]
-                    else:
-                        print(f"Warning: ZStd decompressed size ({len(decompressed)}) smaller than original ({original_length})")
-                        # Pad with zeros if needed
-                        missing = original_length - len(decompressed)
-                        print(f"Padding with {missing} zero bytes")
-                        decompressed = decompressed + bytes(missing)
-                
+                if len(decompressed) > original_length:
+                    decompressed = decompressed[:original_length]
+                elif len(decompressed) < original_length:
+                    decompressed += bytes(original_length - len(decompressed))
+                print(f"ZStd decompression: {len(data)} -> {len(decompressed)} bytes")
                 return decompressed
-            
             except Exception as e:
-                print(f"ZStd decompression error: {e}")
-                # Return zeros as a fallback
+                print(f"Zstd decompress error: {e}")
                 return bytes(original_length)
         
-        def should_use(self, data, threshold=0.9):
+        def should_use(self, data: bytes, threshold=0.9) -> bool:
             """
-            Determine if ZStandard compression should be used
-            
-            Args:
-                data (bytes): Data to analyze
-                threshold (float): Threshold for making decision
-                
-            Returns:
-                bool: True if ZStandard should be used
+            Zstd is fairly good on many data types,
+            but skip if chunk < 512 bytes or entropy > 8.2
             """
-            # ZStandard works well on all sizes but has some overhead
-            if len(data) < 50:
+            if len(data) < 512:
                 return False
-                
-            # Quick check using entropy - if entropy is high, compression may not help
-            entropy = self._calculate_entropy(data)
-            
-            # If entropy is very high (>7.8), data is likely already compressed or encrypted
-            if entropy > 7.8:
+            if calculate_entropy(data) > 8.2:
                 return False
-                
             return True
-        
-        def _calculate_entropy(self, data):
-            """Calculate Shannon entropy of the data"""
-            if not data:
-                return 0.0
-                
-            # Count byte frequencies
-            counts = np.bincount(bytearray(data), minlength=256)
-            
-            # Calculate probabilities for each byte value
-            probabilities = counts / len(data)
-            
-            # Filter out zero probabilities to avoid log(0)
-            probabilities = probabilities[probabilities > 0]
-            
-            # Calculate entropy: -sum(p * log2(p))
-            entropy = -np.sum(probabilities * np.log2(probabilities))
-            
-            return entropy
 
-
-# Add LZ4 compression if available
+# ---------------------------------------------------------------------
+# LZ4
+# ---------------------------------------------------------------------
 if HAS_LZ4:
     class LZ4Compression(CompressionMethod):
-        """
-        LZ4 compression method (very fast with decent compression ratio)
-        """
         @property
         def type_id(self):
             return 9
         
         def compress(self, data):
-            """
-            Compress using LZ4
-            
-            Args:
-                data (bytes): Data to compress
-                
-            Returns:
-                bytes: Compressed data
-            """
             if not data:
                 return b''
-            
             try:
-                # Use LZ4 with high compression level
                 compressed = lz4.frame.compress(data, compression_level=9)
-                print(f"LZ4 compression: {len(data)} bytes -> {len(compressed)} bytes")
+                print(f"LZ4 compression (lvl=9): {len(data)} -> {len(compressed)} bytes")
                 return compressed
             except Exception as e:
-                print(f"LZ4 compression error: {e}")
-                # Fall back to no compression
+                print(f"LZ4 compress error: {e}")
                 return data
         
         def decompress(self, data, original_length):
-            """
-            Decompress LZ4-compressed data
-            
-            Args:
-                data (bytes): Compressed data
-                original_length (int): Original length of the uncompressed data
-                
-            Returns:
-                bytes: Decompressed data
-            """
             if not data:
                 return b''
-            
             try:
-                # Use LZ4 to decompress
                 decompressed = lz4.frame.decompress(data)
-                print(f"LZ4 decompression: {len(data)} bytes -> {len(decompressed)} bytes")
-                
-                # Ensure we have the right size
-                if len(decompressed) != original_length:
-                    if len(decompressed) > original_length:
-                        print(f"Warning: LZ4 decompressed size ({len(decompressed)}) larger than original ({original_length})")
-                        decompressed = decompressed[:original_length]
-                    else:
-                        print(f"Warning: LZ4 decompressed size ({len(decompressed)}) smaller than original ({original_length})")
-                        # Pad with zeros if needed
-                        missing = original_length - len(decompressed)
-                        print(f"Padding with {missing} zero bytes")
-                        decompressed = decompressed + bytes(missing)
-                
+                if len(decompressed) > original_length:
+                    decompressed = decompressed[:original_length]
+                elif len(decompressed) < original_length:
+                    decompressed += bytes(original_length - len(decompressed))
+                print(f"LZ4 decompression: {len(data)} -> {len(decompressed)} bytes")
                 return decompressed
-            
             except Exception as e:
-                print(f"LZ4 decompression error: {e}")
-                # Return zeros as a fallback
+                print(f"LZ4 decompress error: {e}")
                 return bytes(original_length)
         
-        def should_use(self, data, threshold=0.9):
+        def should_use(self, data: bytes, threshold=0.9) -> bool:
             """
-            Determine if LZ4 compression should be used
-            
-            Args:
-                data (bytes): Data to analyze
-                threshold (float): Threshold for making decision
-                
-            Returns:
-                bool: True if LZ4 should be used
+            LZ4 is very fast, best for bigger chunks (≥1 KB),
+            skip if extremely high entropy (>8.1)
             """
-            # LZ4 is very fast and works well on most data
-            # For very small data, it may not be efficient
-            if len(data) < 32:
+            if len(data) < 1024:
                 return False
-                
-            # Quick check using entropy - if entropy is high, compression may not help
-            entropy = self._calculate_entropy(data)
-            
-            # If entropy is very high (>7.8), data is likely already compressed or encrypted
-            if entropy > 7.8:
+            if calculate_entropy(data) > 8.1:
                 return False
-                
             return True
-        
-        def _calculate_entropy(self, data):
-            """Calculate Shannon entropy of the data"""
-            if not data:
-                return 0.0
-                
-            # Count byte frequencies
-            counts = np.bincount(bytearray(data), minlength=256)
-            
-            # Calculate probabilities for each byte value
-            probabilities = counts / len(data)
-            
-            # Filter out zero probabilities to avoid log(0)
-            probabilities = probabilities[probabilities > 0]
-            
-            # Calculate entropy: -sum(p * log2(p))
-            entropy = -np.sum(probabilities * np.log2(probabilities))
-            
-            return entropy
+
+# ---------------------------------------------------------------------
+# If you want to define Brotli, LZHAM, etc. from external modules
+# you'd do something similar with their compress/decompress logic,
+# ensuring not to specify contradictory parameters.
+#
+# That's all for advanced_compression.py

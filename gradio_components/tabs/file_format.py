@@ -64,10 +64,10 @@ def create_file_format_tab():
         
         with gr.Row():
             with gr.Column():
-                gr.Image(value="https://via.placeholder.com/500x300?text=AMBC+Header+Structure", 
+                gr.Image(value="https://dummyimage.com/500x300/000/fff&text=AMBC+Header+Structure", 
                         label="AMBC Header Structure")
             with gr.Column():
-                gr.Image(value="https://via.placeholder.com/500x300?text=AMBC+Package+Structure", 
+                gr.Image(value="https://dummyimage.com/500x300/000/fff&text=AMBC+Package+Structure", 
                         label="AMBC Package Structure")
                 
     return format_tab

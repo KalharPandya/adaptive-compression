@@ -15,7 +15,7 @@ def create_header(title):
     """
     with gr.Row() as header_row:
         with gr.Column(scale=1):
-            logo = gr.Image(value="https://via.placeholder.com/150x150?text=AC", shape=(150, 150), label="")
+            logo = gr.Image(value="https://dummyimage.com/150x150/000/fff&text=AC", height=150, width=150, label="")
         with gr.Column(scale=4):
             header_title = gr.Markdown(f"# {title}")
             header_desc = gr.Markdown("""

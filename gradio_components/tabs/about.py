@@ -34,10 +34,10 @@ def create_about_tab():
         
         with gr.Row():
             with gr.Column():
-                gr.Image(value="https://via.placeholder.com/600x400?text=Adaptive+Compression+Diagram", 
+                gr.Image(value="https://dummyimage.com/600x400/000/fff&text=Adaptive+Compression+Diagram", 
                         label="Adaptive Compression Process")
             with gr.Column():
-                gr.Image(value="https://via.placeholder.com/600x400?text=File+Format+Structure", 
+                gr.Image(value="https://dummyimage.com/600x400/000/fff&text=File+Format+Structure", 
                         label="AMBC File Format")
                 
     return about_tab

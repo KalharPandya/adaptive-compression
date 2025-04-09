@@ -2,16 +2,15 @@ import os
 import sys
 import traceback
 
-# Import compatibility helpers
+# Import compatibility helpers using absolute imports
 try:
-    from .compat import (
+    from gradio_components.compat import (
         is_gradio_available, 
         is_blocks_available, 
         create_blocks,
         get_themes,
         get_version_info
     )
-    # Print detailed version info
     version_info = get_version_info()
     print(f"Using Gradio version {version_info['version']}")
     print(f"Blocks API available: {version_info['has_blocks']}")
@@ -21,7 +20,7 @@ except ImportError as e:
     print(f"Failed to import compatibility layer: {e}")
     HAS_COMPAT = False
 
-# First try importing gradio itself
+# Try importing gradio itself
 try:
     import gradio as gr
     GRADIO_AVAILABLE = True
@@ -29,11 +28,10 @@ except ImportError as e:
     print(f"Failed to import gradio: {e}")
     GRADIO_AVAILABLE = False
 
-# Initialize UI components dictionary to be populated later
+# Dictionary to store imported UI components; errors will be logged.
 ui_components = {}
 import_errors = []
 
-# Use a function to handle each import separately
 def safe_import(module_name):
     try:
         module = __import__(module_name, fromlist=['*'])
@@ -44,69 +42,55 @@ def safe_import(module_name):
 
 def run_interface():
     """
-    Run the enhanced Gradio interface for the adaptive compression algorithm
+    Run the enhanced Gradio interface for the adaptive compression algorithm.
     """
-    global ui_components, import_errors
-    
-    # First check if Gradio is available
     if not GRADIO_AVAILABLE:
         print("Error: Gradio is not installed")
         print("Please install Gradio: pip install gradio>=3.0.0")
         sys.exit(1)
     
-    # Now try importing other UI components
+    # Map of UI modules using absolute imports
     ui_modules = {
-        'about': '.tabs.about',
-        'compress': '.tabs.compress',
-        'decompress': '.tabs.decompress',
-        'analysis': '.tabs.analysis',
-        'file_format': '.tabs.file_format',
-        'help': '.tabs.help',
-        'utils': '.utils',
-        'interface': '.interface'
+        'about': 'gradio_components.tabs.about',
+        'compress': 'gradio_components.tabs.compress',
+        'decompress': 'gradio_components.tabs.decompress',
+        'analysis': 'gradio_components.tabs.analysis',
+        'file_format': 'gradio_components.tabs.file_format',
+        'help': 'gradio_components.tabs.help',
+        'utils': 'gradio_components.utils',
+        'interface': 'gradio_components.interface'
     }
     
-    # Import all modules and populate ui_components
     for key, module_name in ui_modules.items():
         module = safe_import(module_name)
         ui_components[key] = module
     
-    # Check if we have all required components
     all_components_available = all(ui_components.values())
     
-    if all_components_available:
-        print("Successfully imported all UI components")
-        
-        # Now import the interface module specifically
-        from .interface import EnhancedGradioInterface
-        
-        # Create and run the interface
-        try:
-            interface = EnhancedGradioInterface()
-            interface.run()
-        except Exception as e:
-            print(f"Error running enhanced interface: {e}")
-            print("Traceback:")
-            traceback.print_exc()
-            
-            # Attempt to fall back to basic interface
-            try:
-                print("Falling back to basic interface...")
-                from gradio_interface import GradioInterface
-                basic_interface = GradioInterface()
-                basic_interface.run()
-            except Exception as fallback_error:
-                print(f"Error running basic interface: {fallback_error}")
-                print("No functioning interface available. Exiting.")
-                sys.exit(1)
-    else:
-        # Log the specific import errors
+    if not all_components_available:
         print("\nUI component import errors:")
         for error in import_errors:
             print(f"  - {error}")
-        
-        print("Error: Some required modules are not available")
-        print("Please check your installation. The enhanced UI may not work correctly.")
+        print("Error: Some required UI components are not available. Please check your installation.")
+        sys.exit(1)
+    
+    print("Successfully imported all UI components")
+    
+    # Import the enhanced interface class using an absolute import
+    try:
+        from gradio_components.interface import EnhancedGradioInterface
+    except Exception as e:
+        print(f"Error importing EnhancedGradioInterface: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+    
+    try:
+        interface = EnhancedGradioInterface()
+        interface.run()
+    except Exception as e:
+        print(f"Error running enhanced interface: {e}")
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     run_interface()
