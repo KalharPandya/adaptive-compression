@@ -3,7 +3,10 @@ import sys
 import time
 import argparse
 import json
+import importlib
 import importlib.util
+import subprocess
+import pkg_resources
 import matplotlib.pyplot as plt
 
 from marker_finder import MarkerFinder
@@ -23,37 +26,98 @@ try:
     COMPAT_AVAILABLE = True
 except ImportError:
     COMPAT_AVAILABLE = False
+    print("Compatible compression methods not available")
+
+# Get Gradio version using pkg_resources if possible
+try:
+    GRADIO_VERSION = pkg_resources.get_distribution("gradio").version
+    print(f"Detected Gradio version {GRADIO_VERSION} using pkg_resources")
+except (pkg_resources.DistributionNotFound, Exception):
+    GRADIO_VERSION = "unknown"
 
 # Check if Gradio is installed and which version we're using
 try:
     import gradio as gr
-    # Check if Blocks is available directly (newer Gradio versions)
-    has_blocks = hasattr(gr, 'Blocks')
-    # If not, try to import from gradio.blocks (older versions)
-    if not has_blocks:
+    
+    # Try to get version directly from module if not already found
+    if GRADIO_VERSION == "unknown":
+        if hasattr(gr, "__version__"):
+            GRADIO_VERSION = gr.__version__
+            print(f"Detected Gradio version {GRADIO_VERSION} from module attribute")
+        else:
+            # Try to find version from package metadata
+            try:
+                # Use importlib.metadata for Python 3.8+
+                if sys.version_info >= (3, 8):
+                    import importlib.metadata
+                    GRADIO_VERSION = importlib.metadata.version("gradio")
+                    print(f"Detected Gradio version {GRADIO_VERSION} from importlib.metadata")
+            except ImportError:
+                GRADIO_VERSION = "unknown"
+    
+    # Check if Gradio version is new enough to support Blocks
+    HAS_BLOCKS = False
+    
+    if hasattr(gr, 'Blocks'):
+        HAS_BLOCKS = True
+        print(f"Gradio {GRADIO_VERSION} has native Blocks support")
+    # If not, try different approaches for compatibility
+    else:
         try:
+            # Try direct import from blocks module
             from gradio import blocks
             gr.Blocks = blocks.Blocks
-            has_blocks = True
-            print(f"Using gradio compatibility layer for older version: {getattr(gr, '__version__', 'unknown')}")
-        except (ImportError, AttributeError):
-            has_blocks = False
-            print(f"Warning: Your gradio version {getattr(gr, '__version__', 'unknown')} doesn't support Blocks interface")
-except ImportError:
-    has_blocks = False
+            HAS_BLOCKS = True
+            print(f"Used compatibility layer to add Blocks support to Gradio {GRADIO_VERSION}")
+        except (ImportError, AttributeError) as e:
+            # Log the specific error
+            print(f"Failed to import Blocks from gradio.blocks: {str(e)}")
+            try:
+                # Try to monkey patch with a minimum viable implementation
+                from types import SimpleNamespace
+                
+                class MinimalBlocks:
+                    def __init__(self, **kwargs):
+                        self.kwargs = kwargs
+                    
+                    def __enter__(self):
+                        return self
+                    
+                    def __exit__(self, exc_type, exc_val, exc_tb):
+                        pass
+                    
+                    def launch(self, **kwargs):
+                        print("WARNING: Using minimal Blocks implementation")
+                        print("This is a fallback and may not work correctly")
+                        print("Please upgrade Gradio to version 3.0 or later")
+                
+                # Add minimal implementation to gradio
+                gr.Blocks = MinimalBlocks
+                HAS_BLOCKS = True
+                print("Created minimal Blocks compatibility layer (limited functionality)")
+            except Exception as monkey_error:
+                print(f"Failed to create minimal Blocks implementation: {str(monkey_error)}")
+                HAS_BLOCKS = False
+except ImportError as e:
+    GRADIO_VERSION = None
+    HAS_BLOCKS = False
     gr = None
-    print("Warning: Gradio is not installed. GUI features will not be available.")
+    print(f"Warning: Gradio is not installed: {e}")
+    print("GUI features will not be available.")
 
 # Try to import both the original and enhanced Gradio interfaces
 try:
     from gradio_interface import GradioInterface, EnhancedGradioInterface
     ENHANCED_UI_AVAILABLE = hasattr(EnhancedGradioInterface, 'run')
-except ImportError:
+except ImportError as e:
+    print(f"Failed to import enhanced interface: {e}")
     # If EnhancedGradioInterface isn't available, try just the basic interface
     try:
         from gradio_interface import GradioInterface
         ENHANCED_UI_AVAILABLE = False
-    except ImportError:
+        print("Basic gradio interface is available")
+    except ImportError as e:
+        print(f"Failed to import basic interface: {e}")
         GradioInterface = None
         ENHANCED_UI_AVAILABLE = False
         print("Warning: No Gradio interfaces found. GUI features will not be available.")
@@ -105,6 +169,11 @@ def main():
         action="store_true",
         help="Use the enhanced modular UI (if available)"
     )
+    gui_parser.add_argument(
+        "--install-gradio",
+        action="store_true",
+        help="Try to install or upgrade gradio if missing"
+    )
     
     # Parse arguments
     args = parser.parse_args()
@@ -117,6 +186,17 @@ def main():
     elif args.command == "analyze":
         analyze_results(args.results_file, args.output_dir)
     elif args.command == "gui":
+        # If gradio should be installed if missing
+        if hasattr(args, 'install_gradio') and args.install_gradio and (GRADIO_VERSION is None or not HAS_BLOCKS):
+            print("Trying to install/upgrade Gradio...")
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "gradio>=3.0.0"])
+                print("Gradio installed or upgraded. Please restart the application.")
+                sys.exit(0)
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to install Gradio: {e}")
+                print("Please install manually: pip install --upgrade gradio>=3.0.0")
+                sys.exit(1)
         launch_gui(enhanced=args.enhanced)
     else:
         # If no command is provided, show help
@@ -281,9 +361,24 @@ def launch_gui(enhanced=False):
         enhanced (bool): Whether to use the enhanced modular interface
     """
     # First check if Gradio is installed
-    if not has_blocks:
-        print("Error: Gradio with Blocks interface is not available.")
-        print("Please install or upgrade Gradio: pip install -U gradio")
+    if gr is None:
+        print("Error: Gradio is not available.")
+        print("Please install Gradio: pip install gradio>=3.0.0")
+        sys.exit(1)
+    
+    # Check version
+    try:
+        version_components = GRADIO_VERSION.split('.')
+        major_version = int(version_components[0])
+        if major_version < 3 and not HAS_BLOCKS:
+            print(f"Warning: Your Gradio version {GRADIO_VERSION} may not support Blocks interface")
+    except (ValueError, AttributeError, IndexError):
+        # If we can't parse the version, continue anyway
+        pass
+    
+    if not HAS_BLOCKS:
+        print("Error: Gradio Blocks interface is not available.")
+        print("Please install or upgrade Gradio: pip install -U gradio>=3.0.0")
         sys.exit(1)
     
     if enhanced:
@@ -295,7 +390,8 @@ def launch_gui(enhanced=False):
             gradio_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gradio")
             if os.path.isdir(gradio_dir):
                 if gradio_dir not in sys.path:
-                    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                    print(f"Added {os.path.dirname(os.path.abspath(__file__))} to Python path")
                 
                 try:
                     # First try the standard import
@@ -303,32 +399,38 @@ def launch_gui(enhanced=False):
                         from gradio.main import run_interface
                         run_interface()
                         return
-                    except ImportError:
+                    except ImportError as e:
+                        print(f"Failed to import run_interface: {e}")
                         pass
                     
-                    # Next try importing the enhanced interface directly
-                    from gradio_interface import EnhancedGradioInterface
-                    interface = EnhancedGradioInterface()
-                    interface.run()
-                    return
-                except ImportError as e:
-                    print(f"Error importing enhanced interface: {e}")
-                    print("Falling back to standard interface...")
+                    # Fallback: import the enhanced interface directly
+                    try:
+                        from gradio_interface import EnhancedGradioInterface
+                        interface = EnhancedGradioInterface()
+                        interface.run()
+                        return
+                    except ImportError as e:
+                        print(f"Failed to import EnhancedGradioInterface: {e}")
+                except Exception as e:
+                    print(f"Error importing enhanced interface modules: {e}")
             else:
                 print(f"Enhanced GUI modules not found in {gradio_dir}")
-                print("Falling back to standard interface...")
+                print("Please make sure the 'gradio' directory is in the same folder as main.py")
         
         except Exception as e:
             print(f"Error launching enhanced GUI: {e}")
             print("Falling back to standard interface...")
     
-    # Launch the standard interface
-    print("Launching standard GUI...")
+    # Launch the standard interface as fallback
     try:
+        print("Launching standard GUI...")
         interface = GradioInterface()
         interface.run()
     except Exception as e:
         print(f"Error launching standard GUI: {e}")
+        print("Here's the full error trace to help with debugging:")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
