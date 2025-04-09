@@ -1,4 +1,4 @@
-import gradio_components as gr
+import gradio as gr  # Direct import of gradio
 
 def create_file_format_tab():
     """
@@ -17,10 +17,10 @@ def create_file_format_tab():
         ### Header Structure
         
         ```
-        ┌───────────┬───────────┬───────────┬───────────┬───────────┬───────────┐
-        │   MAGIC   │   SIZE    │  MARKER   │ CHECKSUM  │  ORIG     │   COMP    │
-        │  (4 bytes)│  (4 bytes)│  INFO     │  (17 bytes)│  SIZE    │   SIZE    │
-        └───────────┴───────────┴───────────┴───────────┴───────────┴───────────┘
+        ┌────────────┬────────────┬────────────┬────────────┬────────────┬────────────┐
+        │   MAGIC    │   SIZE     │  MARKER    │ CHECKSUM   │  ORIG      │   COMP     │
+        │  (4 bytes) │  (4 bytes) │  INFO      │  (17 bytes)│  SIZE      │   SIZE     │
+        └────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘
         ```
         
         - **MAGIC**: 4-byte signature "AMBC"
@@ -33,9 +33,9 @@ def create_file_format_tab():
         ### Package Structure
         
         ```
-        ┌───────────┬───────────┬───────────┬───────────┬───────────┐
-        │  MARKER   │ METHOD ID │ COMP SIZE │ ORIG SIZE │ COMP DATA │
-        └───────────┴───────────┴───────────┴───────────┴───────────┘
+        ┌────────────┬────────────┬────────────┬────────────┬────────────┐
+        │  MARKER    │ METHOD ID  │ COMP SIZE  │ ORIG SIZE  │ COMP DATA  │
+        └────────────┴────────────┴────────────┴────────────┴────────────┘
         ```
         
         - **MARKER**: Unique binary pattern
@@ -46,20 +46,20 @@ def create_file_format_tab():
         
         ### Compression Methods
         
-        | ID  | Method              | Best For                    |
-        |-----|---------------------|----------------------------|
-        | 1   | RLE                 | Repeated sequences         |
-        | 2   | Dictionary          | Recurring patterns         |
-        | 3   | Huffman             | Skewed frequencies         |
-        | 4   | Delta               | Small variations           |
-        | 5   | DEFLATE             | General purpose            |
-        | 6   | BZIP2               | Text data                  |
-        | 7   | LZMA                | Large redundant data       |
-        | 8   | ZStandard           | Most data types            |
-        | 9   | LZ4                 | Speed-critical data        |
-        | 10  | Brotli              | Web content                |
-        | 11  | LZHAM               | Game assets                |
-        | 255 | No Compression      | Already compressed data    |
+        | ID  | Method             | Best For                      |
+        |-----|--------------------|------------------------------ |
+        | 1   | RLE                | Repeated sequences            |
+        | 2   | Dictionary         | Recurring patterns            |
+        | 3   | Huffman            | Skewed frequencies            |
+        | 4   | Delta              | Small variations              |
+        | 5   | DEFLATE            | General purpose               |
+        | 6   | BZIP2              | Text data                     |
+        | 7   | LZMA               | Large redundant data          |
+        | 8   | ZStandard          | Most data types               |
+        | 9   | LZ4                | Speed-critical data           |
+        | 10  | Brotli             | Web content                   |
+        | 11  | LZHAM              | Game assets                   |
+        | 255 | No Compression     | Already compressed data       |
         """)
         
         with gr.Row():
