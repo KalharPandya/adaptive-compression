@@ -79,7 +79,7 @@ class EnhancedGradioInterface:
         elif isinstance(data, list):
             return [self._ensure_serializable(v) for v in data]
         elif isinstance(data, tuple):
-            return tuple(self._ensure_serializable(v) for v in tuple)
+            return tuple(self._ensure_serializable(v) for v in data)
         elif isinstance(data, set):
             return list(self._ensure_serializable(v) for v in data)
         elif isinstance(data, (int, float, str, bool, type(None))):
@@ -103,91 +103,92 @@ class EnhancedGradioInterface:
         if components_path not in sys.path:
             sys.path.append(components_path)
         
-        # Try to find the tab modules directly without relying on package imports
-        tab_modules = {}
-        
-        # First try direct imports
+        # Direct imports for tabs
         try:
-            # Safe import helper
-            def safe_import(module_name):
-                try:
-                    if module_name.startswith("."):
-                        # Package relative import
-                        module = __import__(module_name[1:], fromlist=['*'])
-                    else:
-                        # Direct import
-                        module = __import__(module_name, fromlist=['*'])
-                    print(f"Successfully imported {module_name}")
-                    return module
-                except ImportError as e:
-                    print(f"Failed to import {module_name}: {e}")
-                    return None
-
-            # Try importing from the tabs directory directly
-            tabs_path = os.path.join(components_path, "tabs")
-            if os.path.exists(tabs_path) and os.path.isdir(tabs_path):
-                # Add tabs directory to path
-                if tabs_path not in sys.path:
-                    sys.path.append(tabs_path)
-                
-                # Try to import each module
-                module_names = ["about", "compress", "decompress", "analysis", "file_format", "help"]
-                for name in module_names:
-                    # Try direct import
-                    tab_modules[name] = safe_import(name)
-                    
-                    # If that fails, try relative import
-                    if tab_modules[name] is None:
-                        tab_modules[name] = safe_import(f"tabs.{name}")
-                
-                # Try to import utils
-                utils_module = safe_import("utils")
-                if utils_module is None:
-                    utils_module = safe_import(".utils")
-                        
-                # Check if we have enough modules
-                if all(tab_modules.values()) and utils_module:
-                    # We have all modules - build enhanced UI
-                    self._build_enhanced_ui(tab_modules, utils_module)
-                    return
-        
+            # Import helpers for direct tab imports
+            print("Attempting to import UI components...")
+            
+            # Direct imports for tabs from the same directory 
+            from .tabs import about, compress, decompress, analysis, file_format, help
+            from . import utils
+            
+            # Check if all modules are available
+            if all([about, compress, decompress, analysis, file_format, help, utils]):
+                print("Successfully imported all UI components.")
+                self._build_ui_with_modules(about, compress, decompress, analysis, file_format, help, utils)
+                return
         except Exception as e:
-            print(f"Error loading UI modules: {e}")
-            traceback.print_exc()
+            print(f"Error with direct tab imports: {e}")
+            
+        # Fallback - try loading from paths
+        tab_modules = self._try_load_tab_modules_from_paths()
+        if tab_modules:
+            self._build_ui_with_modules(**tab_modules)
+            return
         
-        # If we reach here, fallback to basic interface
-        print("Some modules could not be loaded. Falling back to basic interface.")
+        # Final fallback - basic interface
+        print("Falling back to basic interface.")
         self._run_basic_interface()
     
-    def _build_enhanced_ui(self, tab_modules, utils_module):
-        """
-        Build the enhanced UI with the provided modules
+    def _try_load_tab_modules_from_paths(self):
+        """Try to load tab modules by checking various possible paths"""
+        # Potential paths where modules might be found
+        possible_paths = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "tabs"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gradio_components", "tabs"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gradio_components", "tabs"),
+            os.path.join(os.getcwd(), "gradio_components", "tabs"),
+        ]
         
-        Args:
-            tab_modules (dict): Dictionary of tab modules
-            utils_module: Utils module
-        """
+        for path in possible_paths:
+            if os.path.exists(path) and os.path.isdir(path):
+                print(f"Found tabs directory at {path}")
+                # Add to path
+                if path not in sys.path:
+                    sys.path.append(path)
+                    sys.path.append(os.path.dirname(path))  # Add parent directory too
+                
+                # Try imports
+                modules = {}
+                try:
+                    modules["about"] = __import__("about", fromlist=["*"])
+                    modules["compress"] = __import__("compress", fromlist=["*"]) 
+                    modules["decompress"] = __import__("decompress", fromlist=["*"])
+                    modules["analysis"] = __import__("analysis", fromlist=["*"])
+                    modules["file_format"] = __import__("file_format", fromlist=["*"])
+                    modules["help"] = __import__("help", fromlist=["*"])
+                    
+                    utils_path = os.path.dirname(path)
+                    if utils_path not in sys.path:
+                        sys.path.append(utils_path)
+                    modules["utils"] = __import__("utils", fromlist=["*"])
+                    
+                    # Check if all modules loaded
+                    if all(modules.values()):
+                        print("Successfully loaded all modules from paths.")
+                        return modules
+                except Exception as e:
+                    print(f"Error importing from {path}: {e}")
+                    continue
+        
+        return None
+    
+    def _build_ui_with_modules(self, about, compress, decompress, analysis, file_format, help, utils):
+        """Build the UI using the provided modules"""
         try:
-            # Extract required functions from modules
-            about = tab_modules['about']
-            compress = tab_modules['compress']
-            decompress = tab_modules['decompress']
-            analysis = tab_modules['analysis']
-            file_format = tab_modules['file_format']
-            help_mod = tab_modules['help']
-            
-            create_about_tab = getattr(about, 'create_about_tab')
-            create_compress_tab = getattr(compress, 'create_compress_tab')
-            compress_file_enhanced = getattr(compress, 'compress_file_enhanced')
-            create_decompress_tab = getattr(decompress, 'create_decompress_tab')
-            decompress_file_enhanced = getattr(decompress, 'decompress_file_enhanced')
-            create_analysis_tab = getattr(analysis, 'create_analysis_tab')
-            generate_enhanced_analysis = getattr(analysis, 'generate_enhanced_analysis')
-            create_file_format_tab = getattr(file_format, 'create_file_format_tab')
-            create_help_tab = getattr(help_mod, 'create_help_tab')
-            create_header = getattr(utils_module, 'create_header')
-            toggle_detailed_stats = getattr(utils_module, 'toggle_detailed_stats')
-            clear_compression_history = getattr(utils_module, 'clear_compression_history')
+            # Extract required functions
+            create_about_tab = getattr(about, "create_about_tab")
+            create_compress_tab = getattr(compress, "create_compress_tab")
+            compress_file_enhanced = getattr(compress, "compress_file_enhanced")
+            create_decompress_tab = getattr(decompress, "create_decompress_tab")
+            decompress_file_enhanced = getattr(decompress, "decompress_file_enhanced")
+            create_analysis_tab = getattr(analysis, "create_analysis_tab")
+            generate_enhanced_analysis = getattr(analysis, "generate_enhanced_analysis")
+            create_file_format_tab = getattr(file_format, "create_file_format_tab")
+            create_help_tab = getattr(help, "create_help_tab")
+            create_header = getattr(utils, "create_header")
+            toggle_detailed_stats = getattr(utils, "toggle_detailed_stats")
+            clear_compression_history = getattr(utils, "clear_compression_history")
             
             # Build the UI
             with gr.Blocks(title=self.title, theme=gr.themes.Soft() if hasattr(gr, 'themes') else None) as demo:
@@ -214,15 +215,26 @@ class EnhancedGradioInterface:
                     # Help tab
                     help_tab = create_help_tab()
                 
-                # Connect button callbacks - passing the interface instance
-                self._connect_callbacks(demo, inputs_compress, outputs_compress, 
-                                      inputs_decompress, outputs_decompress,
-                                      inputs_analysis, outputs_analysis)
+                # Connect button callbacks
+                self._connect_callbacks(
+                    compress=compress_file_enhanced,
+                    decompress=decompress_file_enhanced,
+                    analyze=generate_enhanced_analysis,
+                    toggle_stats=toggle_detailed_stats,
+                    clear_history=clear_compression_history,
+                    inputs_compress=inputs_compress,
+                    outputs_compress=outputs_compress,
+                    inputs_decompress=inputs_decompress,
+                    outputs_decompress=outputs_decompress,
+                    inputs_analysis=inputs_analysis,
+                    outputs_analysis=outputs_analysis
+                )
                 
                 # Launch the interface
                 demo.launch()
+                
         except Exception as e:
-            print(f"Error building enhanced UI: {e}")
+            print(f"Error building UI: {e}")
             traceback.print_exc()
             self._run_basic_interface()
     
@@ -271,6 +283,13 @@ class EnhancedGradioInterface:
                             decompressed_file = gr.File(label="Decompressed File")
                             decompression_stats = gr.JSON(label="Decompression Statistics")
                             decompress_log = gr.Textbox(label="Decompression Log", lines=10)
+                
+                with gr.Tab("Analysis"):
+                    with gr.Row():
+                        analyze_btn = gr.Button("Generate Analysis", variant="primary")
+                    
+                    with gr.Row():
+                        summary_stats = gr.JSON(label="Summary Statistics")
                 
                 # Define a basic compress function
                 def compress_file_basic(file, chunk_size):
@@ -332,7 +351,14 @@ class EnhancedGradioInterface:
                     try:
                         file_path = file.name
                         filename = os.path.basename(file_path)
-                        base_name = os.path.splitext(filename)[0]
+                        base_name = filename
+                        # Remove _decompressed suffix if it exists
+                        if base_name.endswith("_decompressed"):
+                            base_name = base_name[:-12]
+                        # Remove .ambc extension if it exists
+                        if base_name.endswith(".ambc"):
+                            base_name = base_name[:-5]
+                            
                         output_path = os.path.join(tempfile.gettempdir(), f"{base_name}_decompressed")
                         
                         log_output = []
@@ -372,6 +398,22 @@ class EnhancedGradioInterface:
                         traceback.print_exc()
                         return None, {"error": str(e)}, error_msg
                 
+                # Define a basic analysis function
+                def generate_analysis():
+                    try:
+                        # Get summary statistics
+                        summary = self.analyzer.get_summary_stats()
+                        
+                        # Make sure all keys are strings for JSON compatibility
+                        summary = self._ensure_serializable(summary)
+                        
+                        return summary
+                    except Exception as e:
+                        error_msg = f"Error during analysis: {str(e)}"
+                        print(error_msg)
+                        traceback.print_exc()
+                        return {"error": str(e)}
+                
                 # Connect the UI elements to functions
                 compress_btn.click(
                     compress_file_basic, 
@@ -384,6 +426,12 @@ class EnhancedGradioInterface:
                     inputs=[compressed_file], 
                     outputs=[decompressed_file, decompression_stats, decompress_log]
                 )
+                
+                analyze_btn.click(
+                    generate_analysis, 
+                    inputs=[], 
+                    outputs=[summary_stats]
+                )
             
             # Launch the basic interface
             demo.launch()
@@ -392,21 +440,28 @@ class EnhancedGradioInterface:
             print("Please check your Gradio installation.")
             sys.exit(1)
     
-    def _connect_callbacks(self, demo, inputs_compress, outputs_compress, 
-                         inputs_decompress, outputs_decompress,
-                         inputs_analysis, outputs_analysis):
+    def _connect_callbacks(self, compress, decompress, analyze, toggle_stats, clear_history, 
+                          inputs_compress, outputs_compress, inputs_decompress, 
+                          outputs_decompress, inputs_analysis, outputs_analysis):
         """
         Connect all callback functions for the UI components
-        """
-        # Import needed functions directly from this scope
-        from gradio_components.tabs.compress import compress_file_enhanced
-        from gradio_components.tabs.decompress import decompress_file_enhanced
-        from gradio_components.tabs.analysis import generate_enhanced_analysis
-        from gradio_components.utils import toggle_detailed_stats, clear_compression_history
         
+        Args:
+            compress: Function to compress files
+            decompress: Function to decompress files
+            analyze: Function to generate analysis
+            toggle_stats: Function to toggle detailed statistics
+            clear_history: Function to clear compression history
+            inputs_compress: Compress tab inputs
+            outputs_compress: Compress tab outputs
+            inputs_decompress: Decompress tab inputs
+            outputs_decompress: Decompress tab outputs
+            inputs_analysis: Analysis tab inputs
+            outputs_analysis: Analysis tab outputs
+        """
         # Compression callbacks
         inputs_compress["compress_btn"].click(
-            lambda *args: compress_file_enhanced(self, *args),
+            lambda *args: compress(self, *args),
             inputs=[inputs_compress["input_file"], 
                   inputs_compress["chunk_size"], 
                   inputs_compress["use_multithreading"]],
@@ -419,19 +474,34 @@ class EnhancedGradioInterface:
         )
         
         # Decompression callbacks
-        inputs_decompress["decompress_btn"].click(
-            lambda *args: decompress_file_enhanced(self, *args),
-            inputs=[inputs_decompress["compressed_file"]],
-            outputs=[outputs_decompress["decompressed_file"], 
-                   outputs_decompress["decomp_summary"], 
-                   outputs_decompress["decompression_stats"], 
-                   outputs_decompress["decomp_stats_toggle"], 
-                   outputs_decompress["decompress_log"]]
-        )
+        if "custom_filename" in inputs_decompress and "preserve_extension" in inputs_decompress:
+            # New version with additional options
+            inputs_decompress["decompress_btn"].click(
+                lambda *args: decompress(self, *args),
+                inputs=[inputs_decompress["compressed_file"], 
+                       inputs_decompress["preserve_extension"], 
+                       inputs_decompress["custom_filename"]],
+                outputs=[outputs_decompress["decompressed_file"], 
+                       outputs_decompress["decomp_summary"], 
+                       outputs_decompress["decompression_stats"], 
+                       outputs_decompress["decomp_stats_toggle"], 
+                       outputs_decompress["decompress_log"]]
+            )
+        else:
+            # Original version without additional options
+            inputs_decompress["decompress_btn"].click(
+                lambda *args: decompress(self, *args),
+                inputs=[inputs_decompress["compressed_file"]],
+                outputs=[outputs_decompress["decompressed_file"], 
+                       outputs_decompress["decomp_summary"], 
+                       outputs_decompress["decompression_stats"], 
+                       outputs_decompress["decomp_stats_toggle"], 
+                       outputs_decompress["decompress_log"]]
+            )
         
         # Analysis callbacks
         inputs_analysis["analyze_btn"].click(
-            lambda: generate_enhanced_analysis(self),
+            lambda: analyze(self),
             inputs=[],
             outputs=[outputs_analysis["summary_stats"], 
                    outputs_analysis["ratio_plot"], 
@@ -442,20 +512,20 @@ class EnhancedGradioInterface:
         )
         
         inputs_analysis["clear_history_btn"].click(
-            lambda: clear_compression_history(self),
+            lambda: clear_history(self),
             inputs=[],
             outputs=[outputs_analysis["summary_stats"]]
         )
         
         # Connect toggle callbacks for showing detailed stats
         outputs_compress["stats_toggle"].change(
-            toggle_detailed_stats,
+            toggle_stats,
             inputs=[outputs_compress["stats_toggle"]],
             outputs=[outputs_compress["compression_stats"]]
         )
         
         outputs_decompress["decomp_stats_toggle"].change(
-            toggle_detailed_stats,
+            toggle_stats,
             inputs=[outputs_decompress["decomp_stats_toggle"]],
             outputs=[outputs_decompress["decompression_stats"]]
         )
