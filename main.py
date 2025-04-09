@@ -1,7 +1,9 @@
 import os
 import sys
+import time
 import argparse
 import json
+import importlib.util
 import matplotlib.pyplot as plt
 
 from marker_finder import MarkerFinder
@@ -22,13 +24,40 @@ try:
 except ImportError:
     COMPAT_AVAILABLE = False
 
-# Try to import both the original and enhanced Gradio interfaces
-from gradio_interface import GradioInterface
+# Check if Gradio is installed and which version we're using
 try:
-    from gradio.main import run_interface as run_enhanced_interface
-    ENHANCED_UI_AVAILABLE = True
+    import gradio as gr
+    # Check if Blocks is available directly (newer Gradio versions)
+    has_blocks = hasattr(gr, 'Blocks')
+    # If not, try to import from gradio.blocks (older versions)
+    if not has_blocks:
+        try:
+            from gradio import blocks
+            gr.Blocks = blocks.Blocks
+            has_blocks = True
+            print(f"Using gradio compatibility layer for older version: {getattr(gr, '__version__', 'unknown')}")
+        except (ImportError, AttributeError):
+            has_blocks = False
+            print(f"Warning: Your gradio version {getattr(gr, '__version__', 'unknown')} doesn't support Blocks interface")
 except ImportError:
-    ENHANCED_UI_AVAILABLE = False
+    has_blocks = False
+    gr = None
+    print("Warning: Gradio is not installed. GUI features will not be available.")
+
+# Try to import both the original and enhanced Gradio interfaces
+try:
+    from gradio_interface import GradioInterface, EnhancedGradioInterface
+    ENHANCED_UI_AVAILABLE = hasattr(EnhancedGradioInterface, 'run')
+except ImportError:
+    # If EnhancedGradioInterface isn't available, try just the basic interface
+    try:
+        from gradio_interface import GradioInterface
+        ENHANCED_UI_AVAILABLE = False
+    except ImportError:
+        GradioInterface = None
+        ENHANCED_UI_AVAILABLE = False
+        print("Warning: No Gradio interfaces found. GUI features will not be available.")
+
 
 def main():
     """
@@ -71,12 +100,11 @@ def main():
     
     # GUI command
     gui_parser = subparsers.add_parser("gui", help="Launch the graphical user interface")
-    if ENHANCED_UI_AVAILABLE:
-        gui_parser.add_argument(
-            "--enhanced", 
-            action="store_true",
-            help="Use the enhanced modular UI (if available)"
-        )
+    gui_parser.add_argument(
+        "--enhanced", 
+        action="store_true",
+        help="Use the enhanced modular UI (if available)"
+    )
     
     # Parse arguments
     args = parser.parse_args()
@@ -89,10 +117,7 @@ def main():
     elif args.command == "analyze":
         analyze_results(args.results_file, args.output_dir)
     elif args.command == "gui":
-        if ENHANCED_UI_AVAILABLE and hasattr(args, 'enhanced') and args.enhanced:
-            launch_enhanced_gui()
-        else:
-            launch_original_gui()
+        launch_gui(enhanced=args.enhanced)
     else:
         # If no command is provided, show help
         parser.print_help()
@@ -144,13 +169,15 @@ def compress_file(input_path, output_path, chunk_size):
         if os.path.exists(results_file):
             try:
                 analyzer.load_results(results_file)
-            except:
-                pass
+            except Exception as e:
+                print(f"Error loading results: {e}")
         
         analyzer.add_result(input_path, stats)
         analyzer.save_results(results_file)
         
         print(f"\nCompression completed successfully.")
+        
+        return stats
     
     except Exception as e:
         print(f"Error during compression: {e}")
@@ -182,6 +209,8 @@ def decompress_file(input_path, output_path):
         print(f"  Throughput: {stats['throughput_mb_per_sec']:.2f} MB/s")
         
         print(f"\nDecompression completed successfully.")
+        
+        return stats
     
     except Exception as e:
         print(f"Error during decompression: {e}")
@@ -244,34 +273,62 @@ def analyze_results(results_file, output_dir):
         sys.exit(1)
 
 
-def launch_original_gui():
+def launch_gui(enhanced=False):
     """
-    Launch the original graphical user interface
-    """
-    print("Launching original GUI...")
+    Launch the graphical user interface
     
+    Args:
+        enhanced (bool): Whether to use the enhanced modular interface
+    """
+    # First check if Gradio is installed
+    if not has_blocks:
+        print("Error: Gradio with Blocks interface is not available.")
+        print("Please install or upgrade Gradio: pip install -U gradio")
+        sys.exit(1)
+    
+    if enhanced:
+        try:
+            # Try importing from the gradio module directory first
+            print("Launching enhanced modular GUI...")
+            
+            # Add the gradio directory to the path if it exists
+            gradio_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gradio")
+            if os.path.isdir(gradio_dir):
+                if gradio_dir not in sys.path:
+                    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                
+                try:
+                    # First try the standard import
+                    try:
+                        from gradio.main import run_interface
+                        run_interface()
+                        return
+                    except ImportError:
+                        pass
+                    
+                    # Next try importing the enhanced interface directly
+                    from gradio_interface import EnhancedGradioInterface
+                    interface = EnhancedGradioInterface()
+                    interface.run()
+                    return
+                except ImportError as e:
+                    print(f"Error importing enhanced interface: {e}")
+                    print("Falling back to standard interface...")
+            else:
+                print(f"Enhanced GUI modules not found in {gradio_dir}")
+                print("Falling back to standard interface...")
+        
+        except Exception as e:
+            print(f"Error launching enhanced GUI: {e}")
+            print("Falling back to standard interface...")
+    
+    # Launch the standard interface
+    print("Launching standard GUI...")
     try:
-        # Create and run the interface
         interface = GradioInterface()
         interface.run()
-    
     except Exception as e:
-        print(f"Error launching GUI: {e}")
-        sys.exit(1)
-
-
-def launch_enhanced_gui():
-    """
-    Launch the enhanced modular graphical user interface
-    """
-    print("Launching enhanced modular GUI...")
-    
-    try:
-        # Run the enhanced modular interface
-        run_enhanced_interface()
-    
-    except Exception as e:
-        print(f"Error launching enhanced GUI: {e}")
+        print(f"Error launching standard GUI: {e}")
         sys.exit(1)
 
 
