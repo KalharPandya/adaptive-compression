@@ -162,7 +162,7 @@ if HAS_LZHAM:
             
             try:
                 # Use max compression level
-                compressed = lzham.compress(data, dict_size_log2=23, comp_level=4)
+                compressed = lzham.compress(data)
                 print(f"LZHAM compression: {len(data)} bytes -> {len(compressed)} bytes")
                 return compressed
             except Exception as e:

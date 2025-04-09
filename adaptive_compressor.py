@@ -154,7 +154,27 @@ class AdaptiveCompressor:
 
         # Possibly add Brotli, LZHAM
         # ...
+        
+        # Add Brotli and LZHAM if available
+        try:
+            if os.path.exists('brotli_lzham_compression.py'):
+                from brotli_lzham_compression import BrotliCompression, HAS_BROTLI
+                if HAS_BROTLI:
+                    self.compression_methods.append(BrotliCompression())
+                    print("Added Brotli compression to methods list")
+                    
+                # Try to import LZHAM
+                try:
+                    from brotli_lzham_compression import LZHAMCompression, HAS_LZHAM
+                    if HAS_LZHAM:
+                        self.compression_methods.append(LZHAMCompression())
+                        print("Added LZHAM compression to methods list")
+                except ImportError:
+                    pass
+        except ImportError:
+            pass
         self.compression_methods.append(NoCompression())
+        
 
     def set_progress_callback(self, callback):
         self.progress_callback = callback
