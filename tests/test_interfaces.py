@@ -20,8 +20,8 @@ except ImportError:
 # Check if enhanced interface is available
 ENHANCED_UI_AVAILABLE = False
 try:
-    from gradio.interface import EnhancedGradioInterface
-    from gradio.main import run_interface
+    from gradio_components.interface import EnhancedGradioInterface
+    from gradio_components.main import run_interface
     ENHANCED_UI_AVAILABLE = True
 except ImportError:
     pass
@@ -70,14 +70,14 @@ class TestInterfaces(unittest.TestCase):
     def test_enhanced_interface_imports(self):
         """Test that the enhanced interface modules can be imported"""
         try:
-            from gradio.interface import EnhancedGradioInterface
-            from gradio.utils import create_header, toggle_detailed_stats
-            from gradio.tabs.about import create_about_tab
-            from gradio.tabs.compress import create_compress_tab
-            from gradio.tabs.decompress import create_decompress_tab
-            from gradio.tabs.analysis import create_analysis_tab
-            from gradio.tabs.file_format import create_file_format_tab
-            from gradio.tabs.help import create_help_tab
+            from gradio_components.interface import EnhancedGradioInterface
+            from gradio_components.utils import create_header, toggle_detailed_stats
+            from gradio_components.tabs.about import create_about_tab
+            from gradio_components.tabs.compress import create_compress_tab
+            from gradio_components.tabs.decompress import create_decompress_tab
+            from gradio_components.tabs.analysis import create_analysis_tab
+            from gradio_components.tabs.file_format import create_file_format_tab
+            from gradio_components.tabs.help import create_help_tab
             
             self.assertTrue(True)  # If we get here, imports worked
             print("\u2713 Enhanced interface modules can be imported")
@@ -88,7 +88,7 @@ class TestInterfaces(unittest.TestCase):
     def test_enhanced_interface_creation(self):
         """Test that the enhanced interface can be created"""
         try:
-            from gradio.interface import EnhancedGradioInterface
+            from gradio_components.interface import EnhancedGradioInterface
             
             interface = EnhancedGradioInterface()
             self.assertIsNotNone(interface)
