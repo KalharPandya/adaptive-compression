@@ -19,7 +19,7 @@ except (pkg_resources.DistributionNotFound, Exception):
 
 # Check if Gradio is installed and which version we're using
 try:
-    import gradio as gr
+    import gradio_components as gr
     
     # Try to get version directly from module if not already found
     if GRADIO_VERSION == "unknown":
@@ -47,7 +47,7 @@ try:
     # If not, try to import from gradio.blocks (older versions < 3.0)
     else:
         try:
-            from gradio import blocks
+            from gradio_components import blocks
             gr.Blocks = blocks.Blocks
             HAS_BLOCKS = True
             print(f"Using compatibility layer for Gradio {GRADIO_VERSION}")
@@ -98,7 +98,7 @@ def create_tab_interface():
         return gr.Tabs()
     else:
         try:
-            from gradio import blocks
+            from gradio_components import blocks
             return blocks.Tabs()
         except (ImportError, AttributeError):
             raise ImportError("Tabs interface not available in this Gradio version")

@@ -1,4 +1,4 @@
-import gradio as gr
+import gradio_components as gr
 import matplotlib.pyplot as plt
 import os
 

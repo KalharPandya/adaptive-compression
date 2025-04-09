@@ -1,4 +1,4 @@
-import gradio as gr
+import gradio_components as gr
 import os
 import sys
 import tempfile

@@ -24,7 +24,7 @@ except ImportError as e:
 # Import UI components with robust error handling
 try:
     # Try importing gradio first
-    import gradio as gr
+    import gradio_components as gr
     
     # Now try importing other UI components
     import_errors = []

@@ -9,12 +9,12 @@ import io
 
 # Safely import gradio with version compatibility
 try:
-    import gradio as gr
+    import gradio_components as gr
     # Check for Blocks API differences between versions
     HAS_BLOCKS = hasattr(gr, 'Blocks')
     if not HAS_BLOCKS:
         try:
-            from gradio import blocks
+            from gradio_components import blocks
             gr.Blocks = blocks.Blocks
             HAS_BLOCKS = True
             print(f"Using compatibility layer for Gradio {getattr(gr, '__version__', 'unknown')}")
