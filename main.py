@@ -22,9 +22,10 @@ from compression_analyzer import CompressionAnalyzer
 try:
     from compression_fix import get_compatible_methods
     COMPAT_AVAILABLE = True
+    print("Compression library compatibility layer available.")
 except ImportError:
     COMPAT_AVAILABLE = False
-    print("Compatible compression methods not available")
+    print("Compatible compression methods not available. Some compression methods may not work.")
 
 # Get Gradio version using pkg_resources if possible
 try:
@@ -33,21 +34,63 @@ try:
 except (pkg_resources.DistributionNotFound, Exception):
     GRADIO_VERSION = "unknown"
 
-# Assume that Gradio is installed properly.
+# Check if Gradio is installed properly
 try:
-    import gradio_components as gr
+    import gradio as gr
+    GRADIO_INSTALLED = True
+    print(f"Gradio {getattr(gr, '__version__', GRADIO_VERSION)} is installed")
 except ImportError as e:
+    GRADIO_INSTALLED = False
     GRADIO_VERSION = None
-    gr = None
     print(f"Warning: Gradio is not installed: {e}")
-    print("GUI features will not be available.")
+    print("GUI features will not be available without installing Gradio.")
 
-# Import the enhanced GUI interface (legacy/basic code removed)
+# Handle the enhanced interface with graceful fallback
+class GracefulImportHandler:
+    def __init__(self):
+        self.import_errors = []
+        
+    def try_import(self, module_name):
+        try:
+            module = __import__(module_name, fromlist=['*'])
+            return module
+        except ImportError as e:
+            error_msg = f"Failed to import {module_name}: {e}"
+            self.import_errors.append(error_msg)
+            print(error_msg)
+            return None
+
+# Import the Enhanced Gradio Interface
+gui_handler = GracefulImportHandler()
+
+# First try the compatibility layer for older Gradio versions
+if not gui_handler.try_import('gradio_components.blocks_compat'):
+    print("Gradio blocks compatibility layer not available. UI may have limited functionality.")
+
+# Then try the enhanced interface
+EnhancedGradioInterface = None
 try:
+    # First try direct import
     from gradio_interface import EnhancedGradioInterface
 except ImportError as e:
     print(f"Failed to import EnhancedGradioInterface: {e}")
-    sys.exit(1)
+    # Try to import from gradio_components
+    try:
+        from gradio_components.interface import EnhancedGradioInterface
+    except ImportError as e:
+        print(f"Failed to import from gradio_components.interface: {e}")
+        EnhancedGradioInterface = None
+
+# Legacy GradioInterface for backward compatibility
+GradioInterface = None
+try:
+    from gradio_interface import GradioInterface
+except ImportError:
+    # If the enhanced interface is available, use it as a fallback
+    if EnhancedGradioInterface:
+        GradioInterface = EnhancedGradioInterface
+    else:
+        print("No Gradio interface available. GUI will not work.")
 
 def main():
     """
@@ -97,6 +140,7 @@ def main():
         help="Try to install or upgrade Gradio if missing"
     )
     
+    # Parse arguments
     args = parser.parse_args()
     
     # If no command is provided, or if 'gui' is the command, launch the enhanced GUI.
@@ -111,9 +155,15 @@ def main():
             except subprocess.CalledProcessError as e:
                 print(f"Failed to install Gradio: {e}")
                 sys.exit(1)
+                
         print("Launching enhanced GUI...")
-        interface = EnhancedGradioInterface()
-        interface.run()
+        try:
+            interface = EnhancedGradioInterface()
+            interface.run()
+        except Exception as e:
+            print(f"Error launching enhanced GUI: {e}")
+            print("See SETUP.md for troubleshooting steps.")
+            sys.exit(1)
         sys.exit(0)
     
     # Execute compress, decompress, or analyze commands
