@@ -180,6 +180,11 @@ class GradioInterface:
                 with gr.Row():
                     with gr.Column():
                         compressed_file = gr.File(label="Compressed File")
+                        skip_checksum = gr.Checkbox(
+                            label="Skip Checksum Verification", 
+                            value=False,
+                            info="Skip MD5 checksum verification (useful when decompression fails with checksum errors)"
+                        )
                         decompress_btn = gr.Button("Decompress File", variant="primary")
                     
                     with gr.Column():
@@ -351,7 +356,7 @@ class GradioInterface:
                     return None, {"error": str(e)}, error_msg
             
             # Define decompression function
-            def decompress_file(file):
+            def decompress_file(file, skip_checksum=False):
                 if file is None:
                     return None, {"error": "No file provided"}, "Error: No file provided"
                 
@@ -365,6 +370,7 @@ class GradioInterface:
                     
                     log_output = []
                     log_output.append(f"Starting decompression of {filename}...")
+                    log_output.append(f"Skip checksum verification: {skip_checksum}")
                     
                     # Create custom log capture
                     class LogCapture:
@@ -397,8 +403,71 @@ class GradioInterface:
                         except Exception as e:
                             log_output.append(f"Could not read format version: {e}")
                         
-                        # Create compressor
-                        compressor = AdaptiveCompressor()
+                        # Create a subclass of AdaptiveCompressor that can skip verification
+                        class NoVerifyCompressor(AdaptiveCompressor):
+                            def decompress(self, input_file, output_file):
+                                """Override to skip checksum verification if requested"""
+                                start_time = time.time()
+                                
+                                # Read the compressed file
+                                with open(input_file, 'rb') as f:
+                                    compressed_data = f.read()
+                                
+                                # Parse the header
+                                header_info = self._parse_header(compressed_data)
+                                
+                                # Initialize marker properties
+                                self._init_marker(header_info['marker_bytes'], header_info['marker_length'])
+                                
+                                # Extract the compressed data (skip header)
+                                data_to_decompress = compressed_data[header_info['header_size']:]
+                                
+                                print(f"\nDecompression started. File size: {len(compressed_data)} bytes")
+                                print(f"Header size: {header_info['header_size']} bytes")
+                                print(f"Marker length: {header_info['marker_length']} bits")
+                                print(f"Original size: {header_info['original_size']} bytes")
+                                
+                                # Decompress the data
+                                decompressed_data = self._adaptive_decompress(
+                                    data_to_decompress, 
+                                    header_info['marker_bytes'], 
+                                    header_info['marker_length'],
+                                    header_info['original_size']
+                                )
+                                
+                                # Skip checksum verification if requested
+                                if not skip_checksum:
+                                    # Verify checksum
+                                    actual_checksum = hashlib.md5(decompressed_data).digest()
+                                    expected_checksum = header_info['checksum']
+                                    
+                                    if actual_checksum != expected_checksum:
+                                        print(f"\nChecksum verification failed!")
+                                        print(f"Expected checksum: {expected_checksum.hex()}")
+                                        print(f"Actual checksum:   {actual_checksum.hex()}")
+                                        print(f"Decompressed size: {len(decompressed_data)}, Original size: {header_info['original_size']}")
+                                        
+                                        # Write the decompressed file anyway if skip_checksum is True
+                                        with open(output_file, 'wb') as f:
+                                            f.write(decompressed_data)
+                                        
+                                        raise ValueError("Checksum verification failed! File may be corrupted.")
+                                else:
+                                    print("Skipping checksum verification as requested")
+                                
+                                # Write the decompressed file
+                                with open(output_file, 'wb') as f:
+                                    f.write(decompressed_data)
+                                
+                                # Calculate decompression stats
+                                stats = self._calculate_decompression_stats(
+                                    len(compressed_data), len(decompressed_data), time.time() - start_time
+                                )
+                                
+                                return stats
+                        
+                        # Create compressor instance with checksum skipping if requested
+                        compressor = NoVerifyCompressor()
                         
                         # Decompress the file
                         stats = compressor.decompress(file_path, output_path)
@@ -472,7 +541,7 @@ class GradioInterface:
             
             decompress_btn.click(
                 decompress_file, 
-                inputs=[compressed_file], 
+                inputs=[compressed_file, skip_checksum], 
                 outputs=[decompressed_file, decompression_stats, decompress_log]
             )
             
@@ -568,7 +637,7 @@ class EnhancedGradioInterface:
         # For the enhanced interface, we'll import the relevant modules from the gradio package
         try:
             sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-            from gradio.main import run_interface
+            from gradio_components.main import run_interface
             run_interface()
         except ImportError as e:
             print(f"Error importing enhanced interface: {e}")
