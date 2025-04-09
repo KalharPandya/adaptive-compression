@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import time
+import math
 
 from ..utils import create_method_chart
 
@@ -30,12 +31,21 @@ def create_compress_tab():
                 inputs["input_file"] = gr.File(label="Input File")
                 
                 with gr.Accordion("Advanced Settings", open=False):
-                    inputs["chunk_size"] = gr.Slider(
-                        minimum=512, 
-                        maximum=65536, 
-                        value=4096, 
-                        step=512, 
-                        label="Chunk Size (bytes)",
+                    # Create a dropdown for the chunk size based on the 2^(10+k) formula
+                    k_values = list(range(0, 7))  # k from 0 to 6
+                    chunk_size_options = []
+                    chunk_size_labels = []
+                    
+                    for k in k_values:
+                        size = 2 ** (10 + k)
+                        label = f"{size} bytes (2^{10+k})"
+                        chunk_size_options.append(size)
+                        chunk_size_labels.append(label)
+                    
+                    inputs["chunk_size"] = gr.Dropdown(
+                        choices=chunk_size_labels,
+                        value=chunk_size_labels[2],  # Default to 4096 (k=2)
+                        label="Chunk Size",
                         info="Larger chunks may improve compression ratio but increase memory usage"
                     )
                     inputs["use_multithreading"] = gr.Checkbox(
@@ -74,14 +84,14 @@ def create_compress_tab():
     
     return compress_tab, inputs, outputs
 
-def compress_file_enhanced(interface, file, chunk_size, use_mt):
+def compress_file_enhanced(interface, file, chunk_size_label, use_mt):
     """
     Enhanced compression function with method visualization
     
     Args:
         interface: The EnhancedGradioInterface instance
         file: The file to compress
-        chunk_size: Chunk size in bytes
+        chunk_size_label: Chunk size label from the dropdown
         use_mt: Whether to use multithreading
         
     Returns:
@@ -93,6 +103,15 @@ def compress_file_enhanced(interface, file, chunk_size, use_mt):
     try:
         file_path = file.name
         filename = os.path.basename(file_path)
+        
+        # Parse chunk size from label
+        try:
+            # Extract the number from label like "4096 bytes (2^12)"
+            chunk_size_str = chunk_size_label.split(" ")[0]
+            chunk_size = int(chunk_size_str)
+        except (ValueError, AttributeError, IndexError):
+            # Default to 4096 if parsing fails
+            chunk_size = 4096
         
         # Create output file path
         output_path = os.path.join(tempfile.gettempdir(), f"{filename}.ambc")
@@ -125,7 +144,7 @@ def compress_file_enhanced(interface, file, chunk_size, use_mt):
         
         try:
             # Create compressor with specified chunk size
-            compressor = interface.compressor.__class__(chunk_size=chunk_size)
+            compressor = interface.compressor.__class__(initial_chunk_size=chunk_size)
             if use_mt:
                 compressor.enable_multithreading()
             
