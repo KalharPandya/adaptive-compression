@@ -1,6 +1,7 @@
-import gradio_components as gr
+import gradio as gr  # Import gradio directly, not as gradio_components
 import matplotlib.pyplot as plt
 import os
+import numpy as np
 
 def create_header(title):
     """
@@ -90,10 +91,33 @@ def create_method_chart(stats):
     if not sizes:
         return None
         
-    # Create pie chart
+    # Create pie chart with better colors and layout
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+    
+    # Use colormap for better color differentiation
+    cmap = plt.get_cmap('tab10')
+    colors = [cmap(i % 10) for i in range(len(labels))]
+    
+    wedges, texts, autotexts = ax.pie(
+        sizes,
+        labels=None,  # We'll add a legend instead of labels directly on pie
+        autopct='%1.1f%%',
+        startangle=90,
+        colors=colors,
+        shadow=False,
+    )
+    
+    # Make percentage text more readable
+    for autotext in autotexts:
+        autotext.set_color('white')
+        autotext.set_fontweight('bold')
+    
+    # Add a legend with method names and counts
+    legend_labels = [f"{label} ({count} chunks)" for label, count in zip(labels, sizes)]
+    ax.legend(wedges, legend_labels, title="Methods", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+    
     ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
     plt.title('Compression Method Distribution')
+    plt.tight_layout()
     
     return fig
