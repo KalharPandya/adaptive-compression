@@ -1,6 +1,7 @@
-import gradio_components as gr
+import gradio as gr  # Direct import of gradio
 import os
 import sys
+import traceback
 
 def create_analysis_tab():
     """
@@ -83,12 +84,17 @@ def generate_enhanced_analysis(interface):
         # Make sure all keys are strings for JSON compatibility
         summary = interface._ensure_serializable(summary)
         
-        # Generate plots
-        ratio_fig = interface.analyzer.plot_compression_ratio(figsize=(10, 6))
-        method_fig = interface.analyzer.plot_method_usage(figsize=(10, 6))
-        size_fig = interface.analyzer.plot_size_comparison(figsize=(10, 6))
-        throughput_fig = interface.analyzer.plot_throughput(figsize=(10, 6))
-        filetype_fig = interface.analyzer.plot_file_type_summary(figsize=(10, 6))
+        # Generate plots with improved size
+        try:
+            ratio_fig = interface.analyzer.plot_compression_ratio(figsize=(10, 6))
+            method_fig = interface.analyzer.plot_method_usage(figsize=(10, 6))
+            size_fig = interface.analyzer.plot_size_comparison(figsize=(10, 6))
+            throughput_fig = interface.analyzer.plot_throughput(figsize=(10, 6))
+            filetype_fig = interface.analyzer.plot_file_type_summary(figsize=(10, 6))
+        except Exception as plot_error:
+            print(f"Error generating plots: {plot_error}")
+            traceback.print_exc()
+            ratio_fig = method_fig = size_fig = throughput_fig = filetype_fig = None
         
         return (
             summary,
@@ -101,7 +107,6 @@ def generate_enhanced_analysis(interface):
     
     except Exception as e:
         print(f"Error during analysis: {str(e)}")
-        import traceback
         traceback.print_exc()
         return (
             {"error": str(e)},
