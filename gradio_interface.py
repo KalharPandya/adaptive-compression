@@ -253,7 +253,8 @@ class EnhancedGradioInterface:
                 outputs=[decompressed_file, decompression_stats, decompress_log]
             )
         
-        demo.launch()
+        demo.launch(server_name="0.0.0.0", server_port=7860)
+
 
     def format_file_size(self, size_bytes):
         """
