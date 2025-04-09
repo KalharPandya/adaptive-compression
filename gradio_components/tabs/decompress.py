@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import time
+import re
 
 def create_decompress_tab():
     """
@@ -27,6 +28,17 @@ def create_decompress_tab():
                 """)
                 inputs["compressed_file"] = gr.File(label="Compressed .ambc File")
                 inputs["decompress_btn"] = gr.Button("Decompress File", variant="primary")
+                
+                with gr.Accordion("Output Options", open=False):
+                    inputs["preserve_extension"] = gr.Checkbox(
+                        label="Preserve Original Extension", 
+                        value=True,
+                        info="Keep the original file extension if available"
+                    )
+                    inputs["custom_filename"] = gr.Textbox(
+                        label="Custom Output Filename (optional)", 
+                        placeholder="Leave empty to use original name"
+                    )
             
             with gr.Column():
                 outputs["decompressed_file"] = gr.File(label="Decompressed File")
@@ -53,13 +65,15 @@ def create_decompress_tab():
     
     return decompress_tab, inputs, outputs
 
-def decompress_file_enhanced(interface, file):
+def decompress_file_enhanced(interface, file, preserve_extension=True, custom_filename=""):
     """
     Enhanced decompression function with better output
     
     Args:
         interface: The EnhancedGradioInterface instance
         file: File to decompress
+        preserve_extension: Whether to preserve the original file extension
+        custom_filename: Optional custom filename for the output
         
     Returns:
         tuple: Output components for Gradio
@@ -70,13 +84,30 @@ def decompress_file_enhanced(interface, file):
     try:
         file_path = file.name
         filename = os.path.basename(file_path)
-        base_name = os.path.splitext(filename)[0]
+        
+        # Extract base_name and handle special cases
+        if filename.endswith(".ambc"):
+            # Standard case: remove .ambc extension
+            base_name = filename[:-5]
+        else:
+            # Non-standard case: use filename as is
+            base_name = filename
+            
+        # Handle special cases where the filename already ends with _decompressed
+        base_name = re.sub(r'_decompressed$', '', base_name)
+            
+        # Use custom filename if provided
+        if custom_filename:
+            output_filename = custom_filename
+        else:
+            output_filename = f"{base_name}_decompressed"
         
         # Create output file path
-        output_path = os.path.join(tempfile.gettempdir(), f"{base_name}_decompressed")
+        output_path = os.path.join(tempfile.gettempdir(), output_filename)
         
         log_output = []
         log_output.append(f"Starting decompression of {filename}...")
+        log_output.append(f"Output will be saved as: {output_filename}")
         
         # Create custom log capture
         class LogCapture:
