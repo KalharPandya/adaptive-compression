@@ -1,4 +1,4 @@
-import gradio_components as gr
+import gradio as gr  # Direct import of gradio
 
 def create_about_tab():
     """
@@ -39,5 +39,5 @@ def create_about_tab():
             with gr.Column():
                 gr.Image(value="https://via.placeholder.com/600x400?text=File+Format+Structure", 
                         label="AMBC File Format")
-                        
+                
     return about_tab
