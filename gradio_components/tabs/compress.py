@@ -1,9 +1,10 @@
-import gradio_components as gr
+import gradio as gr  # Direct import of gradio
 import os
 import sys
 import tempfile
 import time
 import math
+import re  # For regex pattern matching
 
 from ..utils import create_method_chart
 
@@ -30,7 +31,7 @@ def create_compress_tab():
                 """)
                 inputs["input_file"] = gr.File(label="Input File")
                 
-                with gr.Accordion("Advanced Settings", open=False):
+                with gr.Accordion("Advanced Settings", open=True):
                     # Create a dropdown for the chunk size based on the 2^(10+k) formula
                     k_values = list(range(0, 7))  # k from 0 to 6
                     chunk_size_options = []
@@ -42,12 +43,27 @@ def create_compress_tab():
                         chunk_size_options.append(size)
                         chunk_size_labels.append(label)
                     
+                    # Explanation of chunk size and k-value
+                    gr.Markdown("""
+                    #### Chunk Size
+                    
+                    Chunk size determines how the file is divided for compression analysis. The size follows
+                    the formula 2^(10+k), where k is a value from 0 to 6.
+                    
+                    - **Smaller chunks** (k=0,1): Better for files with varied data patterns
+                    - **Medium chunks** (k=2,3): Good balance for most files
+                    - **Larger chunks** (k=4+): Better for files with consistent patterns
+                    
+                    Larger chunks can improve compression ratio but require more memory and processing time.
+                    """)
+                    
                     inputs["chunk_size"] = gr.Dropdown(
                         choices=chunk_size_labels,
                         value=chunk_size_labels[2],  # Default to 4096 (k=2)
                         label="Chunk Size",
-                        info="Larger chunks may improve compression ratio but increase memory usage"
+                        info="Select the chunk size for compression"
                     )
+                    
                     inputs["use_multithreading"] = gr.Checkbox(
                         label="Enable Multithreading", 
                         value=False,
@@ -107,18 +123,29 @@ def compress_file_enhanced(interface, file, chunk_size_label, use_mt):
         # Parse chunk size from label
         try:
             # Extract the number from label like "4096 bytes (2^12)"
-            chunk_size_str = chunk_size_label.split(" ")[0]
-            chunk_size = int(chunk_size_str)
-        except (ValueError, AttributeError, IndexError):
+            if isinstance(chunk_size_label, str):
+                chunk_size_str = chunk_size_label.split(" ")[0]
+                chunk_size = int(chunk_size_str)
+                
+                # Also extract the k-value for logging
+                k_match = re.search(r'\(2\^(\d+)\)', chunk_size_label)
+                k_value = int(k_match.group(1)) - 10 if k_match else None
+            else:
+                # If we somehow got a non-string value, use it directly (might be a number)
+                chunk_size = int(chunk_size_label)
+                k_value = None
+        except (ValueError, AttributeError, IndexError) as e:
+            print(f"Error parsing chunk size: {e}, defaulting to 4096")
             # Default to 4096 if parsing fails
             chunk_size = 4096
+            k_value = 2
         
         # Create output file path
         output_path = os.path.join(tempfile.gettempdir(), f"{filename}.ambc")
         
         log_output = []
         log_output.append(f"Starting compression of {filename}...")
-        log_output.append(f"Chunk size: {chunk_size} bytes")
+        log_output.append(f"Chunk size: {chunk_size} bytes" + (f" (k={k_value}, 2^{10+k_value})" if k_value is not None else ""))
         if use_mt:
             log_output.append("Multithreading enabled")
         
