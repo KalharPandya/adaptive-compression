@@ -251,3 +251,52 @@ if HAS_LZHAM:
             entropy = -np.sum(probabilities * np.log2(probabilities))
             
             return entropy
+
+# Add stub implementation for when LZHAM is not available
+if not HAS_LZHAM:
+    class LZHAMCompression(CompressionMethod):
+        """
+        Stub LZHAM compression method when pylzham is not available
+        """
+        @property
+        def type_id(self):
+            return 11
+        
+        def compress(self, data):
+            """
+            Stub compress method - returns data uncompressed
+            
+            Args:
+                data (bytes): Data to compress
+                
+            Returns:
+                bytes: Original data
+            """
+            print("LZHAM compression not available, returning data as-is")
+            return data
+        
+        def decompress(self, data, original_length):
+            """
+            Stub decompress method
+            
+            Args:
+                data (bytes): Compressed data
+                original_length (int): Original length of the uncompressed data
+                
+            Returns:
+                bytes: Original data
+            """
+            print("LZHAM decompression not available, using fallback")
+            
+            # For case when we're trying to decompress LZHAM data without the library,
+            # this is likely to fail, so return zeros as a fallback
+            if len(data) != original_length:
+                print(f"Warning: Cannot properly decompress LZHAM data without pylzham")
+                return bytes(original_length)
+            return data
+        
+        def should_use(self, data, threshold=0.9):
+            """
+            Should never be used since LZHAM is not available
+            """
+            return False
