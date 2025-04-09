@@ -14,15 +14,6 @@ import io
 from adaptive_compressor import AdaptiveCompressor
 from compression_analyzer import CompressionAnalyzer
 
-# Try to import the compatibility layer
-try:
-    from compression_fix import get_compatible_methods
-    COMPAT_AVAILABLE = True
-except ImportError:
-    COMPAT_AVAILABLE = False
-
-
-
 # For enhanced UI access
 class EnhancedGradioInterface:
     """
@@ -89,9 +80,6 @@ class EnhancedGradioInterface:
         except ImportError as e:
             print(f"Error importing enhanced interface: {e}")
             print("Falling back to basic interface...")
-            # Fall back to basic interface if enhanced interface can't be loaded
-            interface = GradioInterface(self.title)
-            interface.run()
             
     def format_file_size(self, size_bytes):
         """
@@ -114,8 +102,3 @@ class EnhancedGradioInterface:
             
         return f"{size_bytes:.1f} {size_names[i]}"
 
-
-if __name__ == "__main__":
-    # Create and run the Gradio interface
-    interface = GradioInterface()
-    interface.run()
