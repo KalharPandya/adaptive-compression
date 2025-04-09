@@ -634,7 +634,7 @@ class EnhancedGradioInterface:
         """
         Start the Gradio interface with enhanced UI and explanations
         """
-        # For the enhanced interface, we'll import the relevant modules from the gradio package
+        # For the enhanced interface, we'll import the relevant modules from the gradio_components package
         try:
             sys.path.append(os.path.dirname(os.path.abspath(__file__)))
             from gradio_components.main import run_interface
